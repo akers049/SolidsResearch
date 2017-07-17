@@ -87,12 +87,12 @@ namespace NeoHookean_Newton
 
     template <int dim>
     inline
-    SymmetricTensor<4,dim>
+    Tensor<4,dim>
     get_incremental_moduli_tensor(const double nu,
     		                      const double mu,
     		                      std::vector<Tensor<1,dim> > old_solution_gradient)
     {
-    	SymmetricTensor<4,dim> tmp;
+    	Tensor<4,dim> tmp;
 
     	Tensor<2, dim> F  = get_deformation_gradient(old_solution_gradient);
     	double II_F = determinant(F);
@@ -319,7 +319,7 @@ namespace NeoHookean_Newton
 
       for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
       {
-        SymmetricTensor<4,dim> d2W_dFdF = get_incremental_moduli_tensor(nu_values[q_point],
+        Tensor<4,dim> d2W_dFdF = get_incremental_moduli_tensor(nu_values[q_point],
                                            mu_values[q_point], old_solution_gradients[q_point]);
 
         for (unsigned int n = 0; n < dofs_per_cell; ++n)
@@ -536,10 +536,9 @@ namespace NeoHookean_Newton
       evaluation_point[j] += epsilon;
       assemble_system_rhs();
       system_rhs *= -1.0;
-      Vector<double> perturbedResidual = system_rhs;
       for(int i = 0; i < numberDofs; i++)
       {
-        numericalStiffness[i][j] = (perturbedResidual[i] - residual[i])/epsilon;
+        numericalStiffness[i][j] = (system_rhs[i] - residual[i])/epsilon;
       }
     }
 
@@ -565,8 +564,7 @@ namespace NeoHookean_Newton
       for(int j = 0; j < numberDofs; j++)
       {
         double diff;
-      //  diff = (system_matrix.el(i,j) - numericalStiffness[i][j]);
-        diff = numericalStiffness[i][j];
+        diff = (system_matrix.el(i,j) - numericalStiffness[i][j]);
         diffNorm += diff*diff;
         out << diff << " ";
       }
@@ -665,7 +663,7 @@ namespace NeoHookean_Newton
       setup_system(true);
 
 
-      add_small_pertubations(0.169);
+      add_small_pertubations(0.1724);
 
       std::cout << "   Number of active cells:       "
                 << triangulation.n_active_cells()

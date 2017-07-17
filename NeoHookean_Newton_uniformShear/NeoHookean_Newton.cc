@@ -87,12 +87,12 @@ namespace NeoHookean_Newton
 
     template <int dim>
     inline
-    SymmetricTensor<4,dim>
+    Tensor<4,dim>
     get_incremental_moduli_tensor(const double nu,
     		                      const double mu,
     		                      std::vector<Tensor<1,dim> > old_solution_gradient)
     {
-    	SymmetricTensor<4,dim> tmp;
+    	Tensor<4,dim> tmp;
 
     	Tensor<2, dim> F  = get_deformation_gradient(old_solution_gradient);
     	double II_F = determinant(F);
@@ -283,20 +283,20 @@ namespace NeoHookean_Newton
   void ElasticProblem<dim>::setup_system (const bool initial_step)
   {
 
-	if (initial_step)
-	{
+	  if (initial_step)
+	  {
       dof_handler.distribute_dofs (fe);
       present_solution.reinit (dof_handler.n_dofs());
 
-       IndexSet locally_relevant_dofs;
-       DoFTools::extract_locally_relevant_dofs (dof_handler, locally_relevant_dofs);
+      IndexSet locally_relevant_dofs;
+      DoFTools::extract_locally_relevant_dofs (dof_handler, locally_relevant_dofs);
 
-       constraints.clear ();
+      constraints.clear ();
 
-       DoFTools::make_hanging_node_constraints (dof_handler,
+      DoFTools::make_hanging_node_constraints (dof_handler,
                                                    constraints);
-       constraints.close ();
-	}
+      constraints.close ();
+	  }
 
     newton_update.reinit(dof_handler.n_dofs());
     system_rhs.reinit (dof_handler.n_dofs());
@@ -378,7 +378,7 @@ namespace NeoHookean_Newton
 
       for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
       {
-        SymmetricTensor<4,dim> d2W_dFdF = get_incremental_moduli_tensor(nu_values[q_point],
+        Tensor<4,dim> d2W_dFdF = get_incremental_moduli_tensor(nu_values[q_point],
                                            mu_values[q_point], old_solution_gradients[q_point]);
 
         for (unsigned int n = 0; n < dofs_per_cell; ++n)
@@ -767,13 +767,15 @@ namespace NeoHookean_Newton
         if (cycle == 0)
         	create_mesh();
         else
+        {
+          setup_system(true);
           refine_grid ();
-
-        setup_system(true);
+        }
 
       }
 
 
+      setup_system(true);
 
       std::cout << "   Number of active cells:       "
                 << triangulation.n_active_cells()
@@ -785,11 +787,11 @@ namespace NeoHookean_Newton
                 << std::endl;
 
 
-      double tol = 1e-10;
+      double tol = 1e-6;
 
-      for(int loadStep = 0; loadStep < 40; loadStep++)
+      for(int loadStep = 0; loadStep < 80; loadStep++)
       {
-        double beta = loadStep/400.0 + 0.01;
+        double beta = loadStep/150.0 + 0.01;
 
         std::cout << "\nLoad Step " << loadStep << " (beta = "<< beta << " )\n";
 
