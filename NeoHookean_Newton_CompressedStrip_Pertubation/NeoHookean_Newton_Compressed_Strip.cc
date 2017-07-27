@@ -172,7 +172,8 @@ namespace NeoHookean_Newton
     if (component == 0)
     {
       //nuValue = NU_VALUE + 0.25*cos(p(0)*2.0*PI/(LENGTH/4.0));
-      nuValue = NU_VALUE + 0.2*(p(1) - 0.5);
+       nuValue = NU_VALUE + 0.2*(p(1) - 0.5);
+
     }
 
     return nuValue;
@@ -883,11 +884,13 @@ namespace NeoHookean_Newton
 
     count = 0;
     Tensor<2,dim, double> deformationGradientSTD;
-    for (; cell!=endc; ++cell)
+    typename DoFHandler<dim>::active_cell_iterator cell_1 = dof_handler.begin_active(),
+                                                   endc_1 = dof_handler.end();
+    for (; cell_1!=endc_1; ++cell_1)
     {
       count = count + 1.0;
 
-      fe_values.reinit (cell);
+      fe_values.reinit (cell_1);
 
       fe_values.get_function_gradients(present_solution, old_solution_gradients);
 
@@ -897,10 +900,9 @@ namespace NeoHookean_Newton
           deformationGradientSTD[i][j] += (F[i][j] - aveDeformationGradient[i][j])*(F[i][j] - aveDeformationGradient[i][j]);
     }
 
-    for (int i = 0; i <dim; i++)
+   for (int i = 0; i <dim; i++)
      for(int j = 0; j < dim; j++)
-       deformationGradientSTD[i][j] = sqrt(deformationGradientSTD[i][j]/(count - 1.0));
-
+       deformationGradientSTD[i][j] = sqrt(deformationGradientSTD[i][j]/(count- 1.0));
 
     std::cout << "Average Deformation Gradient:\n";
     for (int i = 0; i <dim; i++)
@@ -953,7 +955,7 @@ namespace NeoHookean_Newton
 
 
 
-        double lambda = 0.01;
+        double lambda = 0.23;
 
         add_small_pertubations(0.01);
         update_F0(lambda);
