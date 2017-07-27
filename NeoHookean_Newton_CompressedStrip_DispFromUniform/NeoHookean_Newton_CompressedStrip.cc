@@ -91,6 +91,9 @@ namespace NeoHookean_Newton
     Tensor<2,dim> get_piola_kirchoff_tensor(const double nu, const double mu,
             std::vector<Tensor<1,dim> > old_solution_gradient);
 
+    double get_energy(const double nu, const double mu,
+          std::vector<Tensor<1,dim> > old_solution_gradient);
+
 
     void create_mesh(std::vector<double> domain_dimensions, std::vector<unsigned int> grid_dimensions);
     void setup_system ();
@@ -99,11 +102,15 @@ namespace NeoHookean_Newton
     void add_small_pertubations(double amplitude);
     void assemble_system_matrix();
     void assemble_system_rhs();
+    void assemble_system_energy_and_congugate_lambda(double lambda);
     void newton_iterate(const double tolerance,
                         const unsigned int max_iteration);
     void line_search_and_add_step_length(double current_residual);
     void solve();
     void output_results(const unsigned int cycle) const;
+    void output_load_info(std::vector<double> lambda_values,
+                          std::vector<double> energy_values,
+                          std::vector<double> congugate_lambda_values) const;
 
 
     Triangulation<dim>   triangulation;
@@ -123,6 +130,9 @@ namespace NeoHookean_Newton
     Vector<double>       newton_update;
     Vector<double>       system_rhs;
 
+    double               system_energy = 0;
+    double               congugate_lambda = 0;
+
     Tensor<2,dim>        F0;
 
   };
@@ -140,7 +150,7 @@ namespace NeoHookean_Newton
     NuFunction () : Function<dim>() {}
     virtual ~NuFunction (){}
 
-    const double PI = std::atan(1.0)*4;
+    // const double PI = std::atan(1.0)*4;
 
     virtual double value (const Point<dim> &p,
                           const unsigned int  component = 0) const;
@@ -164,7 +174,7 @@ namespace NeoHookean_Newton
     MuFunction () : Function<dim>() {}
     virtual ~MuFunction (){}
 
-    const double PI = std::atan(1.0)*4;
+    // const double PI = std::atan(1.0)*4;
 
     virtual double value (const Point<dim> &p,
                           const unsigned int  component = 0) const;
@@ -201,6 +211,11 @@ namespace NeoHookean_Newton
   double NuFunction<dim>::value (const Point<dim>  &p,
                                  const unsigned int  component) const
   {
+    // this is a scalar function, so make sure compnent is zero...
+    Assert (component == 0, ExcNotImplemented());
+
+    // Put your function for nu. p(0) is x1 value, p(1) is the x2 value
+
     double nuValue = NU_VALUE + 0.2*(p(1) - 0.5);
 
     return nuValue;
@@ -221,7 +236,12 @@ namespace NeoHookean_Newton
   double MuFunction<dim>::value (const Point<dim>  &p,
                                  const unsigned int  component) const
   {
-    double muValue = MU_VALUE;
+    // this is a scalar function, so make sure compnent is zero...
+    Assert (component == 0, ExcNotImplemented());
+
+    // Put your function for mu. p(0) is x1 value, p(1) is the x2 value
+
+    double muValue = MU_VALUE + 0.0*p(0);
 
     return muValue;
   }
@@ -321,6 +341,18 @@ namespace NeoHookean_Newton
 
   }
 
+  template <int dim>
+  inline
+  double ElasticProblem<dim>::get_energy(const double nu, const double mu,
+      std::vector<Tensor<1,dim> > old_solution_gradient)
+  {
+    Tensor<2, dim> F  = get_deformation_gradient(old_solution_gradient);
+    double II_F = determinant(F);
+    double I_C = F[1][0]*F[1][0] + F[0][0]*F[0][0] + F[0][1]*F[0][1] + F[1][1]*F[1][1];
+    double W = mu*(0.5*(I_C - 2 - log(II_F*II_F)) + (nu/(1- nu))*(II_F - 1)*(II_F - 1));
+
+    return W;
+  }
 
 
   template <int dim>
@@ -502,12 +534,12 @@ namespace NeoHookean_Newton
 
     // make sure we get the root that is greater than 1.0
     lambda2 = (-b + sqrt(b*b - 4.0*a*c))/(2.0*a);
-    if(lambda2 < 1.0)
-      lambda2 = (-b - sqrt(b*b - 4.0*a*c))/(2.0*a);
+//    if(lambda2 < 1.0)
+//      lambda2 = (-b - sqrt(b*b - 4.0*a*c))/(2.0*a);
 
 
-    std::cout << "Lambda 1 : " << lambda1 << std::endl;
-    std::cout << "Lambda 2 : " << lambda2 << std::endl;
+    std::cout << "Lambda 1 (stretch in x1): " << lambda1 << std::endl;
+    std::cout << "Lambda 2 (stretch in x2): " << lambda2 << std::endl;
 
     F0[0][0] = lambda1;
     F0[1][1] = lambda2;
@@ -558,8 +590,8 @@ namespace NeoHookean_Newton
     std::vector<double>     nu_values (n_q_points);
     std::vector<double>     mu_values (n_q_points);
 
-    ConstantFunction<dim>  mu(MU_VALUE);
-    NuFunction<dim> nu;
+    MuFunction<dim>  mu;
+    NuFunction<dim>  nu;
 
     typename DoFHandler<dim>::active_cell_iterator cell = dof_handler.begin_active(),
                                                    endc = dof_handler.end();
@@ -658,7 +690,7 @@ namespace NeoHookean_Newton
     std::vector<double>     nu_values (n_q_points);
     std::vector<double>     mu_values (n_q_points);
 
-    ConstantFunction<dim> mu(MU_VALUE);
+    MuFunction<dim> mu;
     NuFunction<dim> nu;
 
     std::vector<Tensor<1, dim> > rhs_values (n_q_points);
@@ -681,7 +713,8 @@ namespace NeoHookean_Newton
       for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
       {
 
-        Tensor<2,dim> dW_dF = get_piola_kirchoff_tensor(nu_values[q_point], mu_values[q_point], old_solution_gradients[q_point]);
+        Tensor<2,dim> dW_dF = get_piola_kirchoff_tensor(nu_values[q_point], mu_values[q_point],
+                                                        old_solution_gradients[q_point]);
         for (unsigned int n = 0; n < dofs_per_cell; ++n)
         {
           const unsigned int component_n = fe.system_to_component_index(n).first;
@@ -722,6 +755,72 @@ namespace NeoHookean_Newton
                                         system_rhs);
   }
 
+  template <int dim>
+  void ElasticProblem<dim>::assemble_system_energy_and_congugate_lambda(double lambda)
+  {
+
+    system_energy = 0;
+    congugate_lambda = 0;
+
+    QGauss<dim>  quadrature_formula(2);
+
+    FEValues<dim> fe_values (fe, quadrature_formula,
+                             update_values   | update_gradients |
+                             update_quadrature_points | update_JxW_values);
+
+    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
+    const unsigned int   n_q_points    = quadrature_formula.size();
+
+    Vector<double>       cell_rhs (dofs_per_cell);
+
+    std::vector<std::vector<Tensor<1,dim> > > old_solution_gradients(n_q_points,
+                                                std::vector<Tensor<1,dim>>(dim));
+
+    std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
+
+    std::vector<double>     nu_values (n_q_points);
+    std::vector<double>     mu_values (n_q_points);
+
+    NuFunction<dim> nu;
+    MuFunction<dim> mu;
+
+    std::vector<Tensor<1, dim> > rhs_values (n_q_points);
+
+    typename DoFHandler<dim>::active_cell_iterator cell = dof_handler.begin_active(),
+                                                   endc = dof_handler.end();
+    for (; cell!=endc; ++cell)
+    {
+      cell_rhs = 0;
+
+      fe_values.reinit (cell);
+
+      fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
+
+      nu.value_list (fe_values.get_quadrature_points(), nu_values);
+      mu.value_list     (fe_values.get_quadrature_points(), mu_values);
+
+
+      double dlambda1_dlambda, dlambda2_dlambda, a_nu;
+      for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+      {
+        Tensor<2,dim> dW_dF = get_piola_kirchoff_tensor(nu_values[q_point], mu_values[q_point],
+                                                        old_solution_gradients[q_point]);
+
+        dlambda1_dlambda = -1;
+
+        a_nu = (2.0*nu_values[q_point]/(1.0 - nu_values[q_point]));
+        dlambda2_dlambda = ( a_nu + sqrt(4 + a_nu + a_nu*a_nu))
+                            / ((2 + 2*a_nu)*(1.0 - lambda)*(1.0 - lambda));
+
+        congugate_lambda += (dlambda1_dlambda*dW_dF[0][0] + dlambda2_dlambda*dW_dF[1][1])
+                             *fe_values.JxW(q_point);
+
+        double W = get_energy(nu_values[q_point], mu_values[q_point], old_solution_gradients[q_point]);
+        system_energy += W*fe_values.JxW(q_point);
+      }
+    }
+
+  }
 
   template <int dim>
   void ElasticProblem<dim>::newton_iterate(const double tolerance,
@@ -810,20 +909,6 @@ namespace NeoHookean_Newton
   void ElasticProblem<dim>::output_results (const unsigned int cycle) const
   {
 
-    // So this first part is pretty much taken directly from one of the dealii
-    // steps to output the data in vtk format
-    std::string filename = "solution-";
-    filename += ('0' + cycle);
-    Assert (cycle < 100, ExcInternalError());
-
-    filename += ".vtk";
-    std::ofstream output (filename.c_str());
-
-    DataOut<dim> data_out;
-    data_out.attach_dof_handler (dof_handler);
-
-
-
     std::vector<std::string> solution_names;
     switch (dim)
       {
@@ -844,49 +929,142 @@ namespace NeoHookean_Newton
         break;
       }
 
-    data_out.add_data_vector (present_solution, solution_names);
-    data_out.build_patches ();
-    data_out.write_vtk (output);
 
+
+    // output the total displacements. this requires adding in the uniform solution on top of the displacements
+
+    std::string filename0 = "total_displacement-";
+    filename0 += ('0' + cycle);
+    Assert (cycle < 100, ExcInternalError());
+
+    filename0 += ".vtk";
+    std::ofstream output_totalDisp (filename0.c_str());
+
+    DataOut<dim> data_out_totalDisp;
+
+    data_out_totalDisp.attach_dof_handler (dof_handler);
+
+
+
+    // Get the points of the dofs so we can do some shifting...
+    std::vector<Point<dim>> support_points(dof_handler.n_dofs());
+    MappingQ1<dim> mapping;
+    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
+
+    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
+    const unsigned int   number_dofs = dof_handler.n_dofs();
+    std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
+
+
+    /* I couldnt figure out a better way to do this easily in dealii. What I am doing here is
+     * looping through all of the cells and their dofs, mapping the local dof to its global index,
+     * and seeing if we have shifted that global index yet. If not, apply the shift by using its coordinates
+     * and knowing which componenet the dof is (x1 or x2).
+     */
+
+   std::vector<bool> is_shifted(number_dofs, false);
+
+    unsigned int global_dof_indicie;
+
+    Vector<double> shifted_solution(number_dofs);
+    typename DoFHandler<dim>::active_cell_iterator cell = dof_handler.begin_active(),
+                                                   endc = dof_handler.end();
+    for (; cell!=endc; ++cell)
+    {
+      cell->get_dof_indices (local_dof_indices);
+
+      for(unsigned int i  = 0; i < dofs_per_cell; i ++)
+      {
+        if (is_shifted[local_dof_indices[i]] == false)
+        {
+          // have not shifted this dof yet
+          global_dof_indicie = local_dof_indices[i];
+          const unsigned int component_i = fe.system_to_component_index(i).first;
+          if(component_i == 0)
+          {
+            // it is an x1 component
+             shifted_solution[global_dof_indicie] = present_solution[global_dof_indicie] +
+                                                       support_points[global_dof_indicie](0)*(F0[0][0] - 1.0);
+          }
+          else
+          {
+            // it is an x2 componenet
+            shifted_solution[local_dof_indices[i]] = present_solution[global_dof_indicie] +
+                                                      support_points[global_dof_indicie](1)*(F0[1][1] - 1.0);
+          }
+
+          is_shifted[global_dof_indicie] = true;
+        }
+        else
+          continue;
+      }
+    }
+
+
+    data_out_totalDisp.add_data_vector (shifted_solution, solution_names);
+    data_out_totalDisp.build_patches ();
+    data_out_totalDisp.write_vtk (output_totalDisp);
+
+
+    // Now output the displacements from uniform solution
+
+    std::string filename1 = "displacement_from_uniform-";
+    filename1 += ('0' + cycle);
+    Assert (cycle < 100, ExcInternalError());
+
+    filename1 += ".vtk";
+    std::ofstream output_disp_from_uniform (filename1.c_str());
+
+    DataOut<dim> data_out_disp_from_uniform;
+
+    data_out_disp_from_uniform.attach_dof_handler (dof_handler);
+
+    data_out_disp_from_uniform.add_data_vector (present_solution, solution_names);
+    data_out_disp_from_uniform.build_patches ();
+    data_out_disp_from_uniform.write_vtk (output_disp_from_uniform);
 
     // Now output the deformed mesh
 
-    // Need to make a copy of the current mesh, add the uniform deformation,
-    // then add the displacements.
-
-    Triangulation<dim> triangulation_deformed;
-    triangulation_deformed.copy_triangulation(triangulation);
-
-    DoFHandler<dim> dof_handler_deformed(triangulation_deformed);
-
-    UniformDeformation<dim> uniform_deform(F0);
-
-    GridTools::transform(uniform_deform, triangulation_deformed);
-
-    dof_handler_deformed.distribute_dofs(fe);
+    // just need to shift the corrdinates of the verticies by the shifted solution vector
 
     DataOut<dim> deformed_data_out;
-    std::vector<DataComponentInterpretation::DataComponentInterpretation>
-    data_component_interpretation(dim,DataComponentInterpretation::component_is_part_of_vector);
 
-    std::vector<std::string> solution_name(dim, "displacement");
-    deformed_data_out.attach_dof_handler(dof_handler_deformed);
+    deformed_data_out.attach_dof_handler(dof_handler);
+    deformed_data_out.add_data_vector(shifted_solution, solution_names);
 
-    deformed_data_out.add_data_vector(present_solution,
-                                      solution_name,
-                                      DataOut<dim>::type_dof_data,
-                                      data_component_interpretation);
-
-    MappingQEulerian<dim> q_mapping(1,  dof_handler_deformed, present_solution);
+    MappingQEulerian<dim> q_mapping(1,  dof_handler, shifted_solution);
     deformed_data_out.build_patches(q_mapping, 1);
 
-    std::string deformed_filename = "deformed_mesh-";
-    deformed_filename += ('0' + cycle);
-    deformed_filename += ".vtk";
-    std::ofstream output_deformed_mesh(deformed_filename.c_str());
+    std::string filename2 = "deformed_mesh-";
+    filename2 += ('0' + cycle);
+    filename2 += ".vtk";
+    std::ofstream output_deformed_mesh(filename2.c_str());
     deformed_data_out.write_vtk(output_deformed_mesh);
 
 
+  }
+
+  template<int dim>
+  void ElasticProblem<dim>::output_load_info(std::vector<double> lambda_values,
+                                             std::vector<double> energy_values,
+                                             std::vector<double> congugate_lambda_values) const
+  {
+
+    std::string filename = "load_info.txt";
+    std::ofstream load_data_output;
+    load_data_output.open(filename.c_str());
+    load_data_output << "# lambda";
+    load_data_output << std::setw(25) << "energy" ;
+    load_data_output << std::setw(25) << "congugate_lambda" << std::endl;
+    load_data_output << std::endl;
+    for(unsigned int i = 0; i < lambda_values.size(); i ++)
+    {
+      load_data_output << std::setprecision(15) << std::setw(8) << lambda_values[i];
+      load_data_output << std::setprecision(15) << std::setw(25) << energy_values[i];
+      load_data_output << std::setprecision(15) << std::setw(25) << congugate_lambda_values[i] << std::endl;
+    }
+
+    load_data_output.close();
   }
 
   template <int dim>
@@ -895,18 +1073,23 @@ namespace NeoHookean_Newton
 
 
     // These are the lengths of the domain in the x1 and x2 directions.
-    double L = 3.0;
+    double L = 2.0;
     double H = 1.0;
 
     // These are the dimensions of the grid in the x1 and x2 directions.
-    unsigned int x1_grid_dimensions = 4;
-    unsigned int x2_grid_dimensions = 3;
+    unsigned int x1_grid_dimensions = 20;
+    unsigned int x2_grid_dimensions = 10;
 
-    double final_lambda = 0.3;
-    int load_steps = 8;
+    // The final lambda value. 0 is no displacement.
+    double final_lambda = 0.47;
+    // number of (equally spaced) steps to get the the desired final lambda value
+    int load_steps = 10;
 
+    // absolute tolerance of the newton convergence
     double tol = 1e-10;
 
+    // output every n steps
+    int output_every_n = 3;
 
     std::vector<double> domain_dimensions(dim);
     domain_dimensions[0] = L;
@@ -930,14 +1113,15 @@ namespace NeoHookean_Newton
               << std::endl;
 
 
-
-
     // small pertubations are added to the non-constrained DoFs. This is so that in the isotropic case
-    // when the expected solution vector is zero, it doesn't just start at the solution and has to iterate...
+    // when the expected solution vector is zero, it doesn't just start at the "right answer"...
     add_small_pertubations(0.01);
 
     set_boundary_values();
 
+    std::vector<double> lambda_values(load_steps);
+    std::vector<double> congugate_lambda_values(load_steps);
+    std::vector<double> energy_values(load_steps);
 
     double lambda_step = final_lambda/load_steps;
     double lambda = 0.0;
@@ -946,9 +1130,18 @@ namespace NeoHookean_Newton
       lambda +=lambda_step;
       update_F0(lambda);
       newton_iterate(tol, 50);
-      output_results (i);
+
+      assemble_system_energy_and_congugate_lambda(lambda);
+      lambda_values[i] = lambda;
+      congugate_lambda_values[i] = congugate_lambda;
+      energy_values[i] = system_energy;
+
+      std::cout << "    System Energy: " << system_energy << "\n\n";
+      if(i%output_every_n == 0)
+        output_results (i/output_every_n);
     }
 
+    output_load_info(lambda_values, energy_values, congugate_lambda_values);
   }
 }
 
