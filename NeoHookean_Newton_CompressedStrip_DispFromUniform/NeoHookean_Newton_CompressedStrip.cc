@@ -95,7 +95,7 @@ namespace NeoHookean_Newton
           std::vector<Tensor<1,dim> > old_solution_gradient);
 
 
-    void create_mesh(std::vector<double> domain_dimensions, std::vector<unsigned int> grid_dimensions);
+    void create_mesh();
     void setup_system ();
     void set_boundary_values();
     void update_F0(const double lambda);
@@ -111,6 +111,8 @@ namespace NeoHookean_Newton
     void output_load_info(std::vector<double> lambda_values,
                           std::vector<double> energy_values,
                           std::vector<double> congugate_lambda_values) const;
+    void getNextDataLine( FILE* const filePtr, char* nextLinePtr,
+                            int const maxSize, int* const endOfFileFlag);
 
 
     Triangulation<dim>   triangulation;
@@ -134,6 +136,14 @@ namespace NeoHookean_Newton
     double               congugate_lambda = 0;
 
     Tensor<2,dim>        F0;
+
+    double final_lambda;
+    int load_steps;
+    int output_every_n;
+    double tol;
+    std::vector<double> domain_dimensions;
+    std::vector<unsigned int>  grid_dimensions;
+
 
   };
 
@@ -360,7 +370,87 @@ namespace NeoHookean_Newton
     :
     dof_handler (triangulation),
     fe (FE_Q<dim>(1), dim)
-  {}
+  {
+    FILE* fid;
+    int endOfFileFlag;
+    char nextLine[64];
+    int maxline = 64;
+    int valuesWritten;
+    char inputFileName[] = "inputFile.txt";
+
+    grid_dimensions.resize(2);
+    domain_dimensions.resize(2);
+
+    fid = std::fopen(inputFileName, "r");
+    if (fid == NULL)
+    {
+      std::cout << "Unable to open file 'inputFile.txt;', using default values" << std::endl;
+      goto defaultValues;
+    }
+    else
+    {
+      // Read in the grid dimensions
+      getNextDataLine(fid, nextLine, maxline, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%u %u", &grid_dimensions[0], &grid_dimensions[1]);
+      if(valuesWritten != 2)
+      {
+        std::cout << "Error reading input file. Using default values" << std::endl;
+        fclose(fid);
+        goto defaultValues;
+      }
+
+      // Read in the domain dimensions
+      getNextDataLine(fid, nextLine, maxline, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg %lg", &domain_dimensions[0], &domain_dimensions[1]);
+      if(valuesWritten != 2)
+      {
+        std::cout << "Error reading input file. Using default values" << std::endl;
+        fclose(fid);
+        goto defaultValues;
+      }
+
+      getNextDataLine(fid, nextLine, maxline, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg %d", &final_lambda, &load_steps);
+      if(valuesWritten != 2)
+      {
+        std::cout << "Error reading input file. Using default values" << std::endl;
+        fclose(fid);
+        goto defaultValues;
+      }
+
+      getNextDataLine(fid, nextLine, maxline, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%d", &output_every_n);
+      if(valuesWritten != 1)
+      {
+        std::cout << "Error reading input file. Using default values" << std::endl;
+        fclose(fid);
+        goto defaultValues;
+      }
+      getNextDataLine(fid, nextLine, maxline, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg", &tol);
+      if(valuesWritten != 1)
+      {
+        std::cout << "Error reading input file. Using default values" << std::endl;
+        fclose(fid);
+        goto defaultValues;
+      }
+    }
+    fclose(fid);
+
+    return;
+
+    defaultValues:
+    {
+      grid_dimensions[0] = 10;
+      grid_dimensions[1] = 10;
+      domain_dimensions[0] = 1;
+      domain_dimensions[1] = 1;
+      final_lambda = 0.1;
+      load_steps = 10;
+      output_every_n = 9;
+      tol = 1e-10;
+    }
+  }
 
 
 
@@ -371,9 +461,30 @@ namespace NeoHookean_Newton
     dof_handler.clear ();
   }
 
+  template <int dim>
+  void ElasticProblem<dim>::getNextDataLine( FILE* const filePtr, char* nextLinePtr,
+                        int const maxSize, int* const endOfFileFlag)
+  {
+    *endOfFileFlag = 0;
+    do
+    {
+      if(fgets(nextLinePtr, maxSize, filePtr) == NULL)
+      {
+        *endOfFileFlag = 1;
+        break;
+      }
+      while ((nextLinePtr[0] == ' ' || nextLinePtr[0] == '\t') ||
+             (nextLinePtr[0] == '\n' || nextLinePtr[0] == '\r' ))
+      {
+        nextLinePtr = (nextLinePtr + 1);
+      }
+    }
+    while ((strncmp("#", nextLinePtr, 1) == 0) || (strlen(nextLinePtr) == 0));
+  }
+
 
   template <int dim>
-  void ElasticProblem<dim>::create_mesh(std::vector<double> domain_dimensions, std::vector<unsigned int> grid_dimensions)
+  void ElasticProblem<dim>::create_mesh()
   {
     // creates our strip.
 
@@ -1071,35 +1182,7 @@ namespace NeoHookean_Newton
   void ElasticProblem<dim>::run ()
   {
 
-
-    // These are the lengths of the domain in the x1 and x2 directions.
-    double L = 2.0;
-    double H = 1.0;
-
-    // These are the dimensions of the grid in the x1 and x2 directions.
-    unsigned int x1_grid_dimensions = 20;
-    unsigned int x2_grid_dimensions = 10;
-
-    // The final lambda value. 0 is no displacement.
-    double final_lambda = 0.47;
-    // number of (equally spaced) steps to get the the desired final lambda value
-    int load_steps = 10;
-
-    // absolute tolerance of the newton convergence
-    double tol = 1e-10;
-
-    // output every n steps
-    int output_every_n = 3;
-
-    std::vector<double> domain_dimensions(dim);
-    domain_dimensions[0] = L;
-    domain_dimensions[1] = H;
-
-    std::vector<unsigned int>  grid_dimensions(dim);
-    grid_dimensions[0] = x1_grid_dimensions;
-    grid_dimensions[1] = x2_grid_dimensions;
-
-    create_mesh(domain_dimensions, grid_dimensions);
+    create_mesh();
 
     setup_system();
 
