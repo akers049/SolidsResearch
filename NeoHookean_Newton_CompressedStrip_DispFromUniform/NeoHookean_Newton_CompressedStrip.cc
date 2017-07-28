@@ -56,6 +56,7 @@
 #include <fstream>
 #include <iostream>
 
+#define MAXLINE 1024
 #define MU_VALUE 1.0
 #define NU_VALUE 0.33
 
@@ -111,6 +112,7 @@ namespace NeoHookean_Newton
     void output_load_info(std::vector<double> lambda_values,
                           std::vector<double> energy_values,
                           std::vector<double> congugate_lambda_values) const;
+    void read_input_file(char* filename);
     void getNextDataLine( FILE* const filePtr, char* nextLinePtr,
                             int const maxSize, int* const endOfFileFlag);
 
@@ -137,10 +139,10 @@ namespace NeoHookean_Newton
 
     Tensor<2,dim>        F0;
 
-    double final_lambda;
-    int load_steps;
-    int output_every_n;
-    double tol;
+    double final_lambda = 0;
+    unsigned int load_steps = 0;
+    unsigned int output_every_n = 0;
+    double tol = 0;
     std::vector<double> domain_dimensions;
     std::vector<unsigned int>  grid_dimensions;
 
@@ -370,87 +372,7 @@ namespace NeoHookean_Newton
     :
     dof_handler (triangulation),
     fe (FE_Q<dim>(1), dim)
-  {
-    FILE* fid;
-    int endOfFileFlag;
-    char nextLine[64];
-    int maxline = 64;
-    int valuesWritten;
-    char inputFileName[] = "inputFile.txt";
-
-    grid_dimensions.resize(2);
-    domain_dimensions.resize(2);
-
-    fid = std::fopen(inputFileName, "r");
-    if (fid == NULL)
-    {
-      std::cout << "Unable to open file 'inputFile.txt;', using default values" << std::endl;
-      goto defaultValues;
-    }
-    else
-    {
-      // Read in the grid dimensions
-      getNextDataLine(fid, nextLine, maxline, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%u %u", &grid_dimensions[0], &grid_dimensions[1]);
-      if(valuesWritten != 2)
-      {
-        std::cout << "Error reading input file. Using default values" << std::endl;
-        fclose(fid);
-        goto defaultValues;
-      }
-
-      // Read in the domain dimensions
-      getNextDataLine(fid, nextLine, maxline, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%lg %lg", &domain_dimensions[0], &domain_dimensions[1]);
-      if(valuesWritten != 2)
-      {
-        std::cout << "Error reading input file. Using default values" << std::endl;
-        fclose(fid);
-        goto defaultValues;
-      }
-
-      getNextDataLine(fid, nextLine, maxline, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%lg %d", &final_lambda, &load_steps);
-      if(valuesWritten != 2)
-      {
-        std::cout << "Error reading input file. Using default values" << std::endl;
-        fclose(fid);
-        goto defaultValues;
-      }
-
-      getNextDataLine(fid, nextLine, maxline, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%d", &output_every_n);
-      if(valuesWritten != 1)
-      {
-        std::cout << "Error reading input file. Using default values" << std::endl;
-        fclose(fid);
-        goto defaultValues;
-      }
-      getNextDataLine(fid, nextLine, maxline, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%lg", &tol);
-      if(valuesWritten != 1)
-      {
-        std::cout << "Error reading input file. Using default values" << std::endl;
-        fclose(fid);
-        goto defaultValues;
-      }
-    }
-    fclose(fid);
-
-    return;
-
-    defaultValues:
-    {
-      grid_dimensions[0] = 10;
-      grid_dimensions[1] = 10;
-      domain_dimensions[0] = 1;
-      domain_dimensions[1] = 1;
-      final_lambda = 0.1;
-      load_steps = 10;
-      output_every_n = 9;
-      tol = 1e-10;
-    }
-  }
+  {}
 
 
 
@@ -459,27 +381,6 @@ namespace NeoHookean_Newton
   ElasticProblem<dim>::~ElasticProblem ()
   {
     dof_handler.clear ();
-  }
-
-  template <int dim>
-  void ElasticProblem<dim>::getNextDataLine( FILE* const filePtr, char* nextLinePtr,
-                        int const maxSize, int* const endOfFileFlag)
-  {
-    *endOfFileFlag = 0;
-    do
-    {
-      if(fgets(nextLinePtr, maxSize, filePtr) == NULL)
-      {
-        *endOfFileFlag = 1;
-        break;
-      }
-      while ((nextLinePtr[0] == ' ' || nextLinePtr[0] == '\t') ||
-             (nextLinePtr[0] == '\n' || nextLinePtr[0] == '\r' ))
-      {
-        nextLinePtr = (nextLinePtr + 1);
-      }
-    }
-    while ((strncmp("#", nextLinePtr, 1) == 0) || (strlen(nextLinePtr) == 0));
   }
 
 
@@ -645,12 +546,6 @@ namespace NeoHookean_Newton
 
     // make sure we get the root that is greater than 1.0
     lambda2 = (-b + sqrt(b*b - 4.0*a*c))/(2.0*a);
-//    if(lambda2 < 1.0)
-//      lambda2 = (-b - sqrt(b*b - 4.0*a*c))/(2.0*a);
-
-
-    std::cout << "Lambda 1 (stretch in x1): " << lambda1 << std::endl;
-    std::cout << "Lambda 2 (stretch in x2): " << lambda2 << std::endl;
 
     F0[0][0] = lambda1;
     F0[1][1] = lambda2;
@@ -1178,22 +1073,135 @@ namespace NeoHookean_Newton
     load_data_output.close();
   }
 
+  template<int dim>
+  void ElasticProblem<dim>::read_input_file(char* filename)
+  {
+    FILE* fid;
+    int endOfFileFlag;
+    char nextLine[MAXLINE];
+
+    int valuesWritten;
+    bool fileReadErrorFlag = false;
+
+    grid_dimensions.resize(2);
+    domain_dimensions.resize(2);
+
+    fid = std::fopen(filename, "r");
+    if (fid == NULL)
+    {
+      std::cout << "Unable to open file '" << filename << "', using default values" << std::endl;
+      fileReadErrorFlag = true;
+    }
+    else
+    {
+      // Read in the grid dimensions
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%u %u", &grid_dimensions[0], &grid_dimensions[1]);
+      if(valuesWritten != 2)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+
+      // Read in the domain dimensions
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg %lg", &domain_dimensions[0], &domain_dimensions[1]);
+      if(valuesWritten != 2)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+
+      // read in final loading and number of steps
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg %u", &final_lambda, &load_steps);
+      if(valuesWritten != 2)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+
+      // read in the frequency of outputting
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%u", &output_every_n);
+      if(valuesWritten != 1)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+
+      // read in the absolute tolerance of newton iteration
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg", &tol);
+      if(valuesWritten != 1)
+      {
+        fileReadErrorFlag = true;
+      }
+
+     fileClose:
+     {
+       fclose(fid);
+     }
+    }
+
+    if (fileReadErrorFlag)
+    {
+      grid_dimensions[0] = 10;
+      grid_dimensions[1] = 10;
+      domain_dimensions[0] = 1;
+      domain_dimensions[1] = 1;
+      final_lambda = 0.1;
+      load_steps = 10;
+      output_every_n = 9;
+      tol = 1e-10;
+    }
+    else
+      std::cout << "Input file sucessfully read" << std::endl;
+
+  }
+
+  template <int dim>
+  void ElasticProblem<dim>::getNextDataLine( FILE* const filePtr, char* nextLinePtr,
+                          int const maxSize, int* const endOfFileFlag)
+  {
+    *endOfFileFlag = 0;
+    do
+    {
+      if(fgets(nextLinePtr, maxSize, filePtr) == NULL)
+      {
+        *endOfFileFlag = 1;
+        break;
+      }
+      while ((nextLinePtr[0] == ' ' || nextLinePtr[0] == '\t') ||
+             (nextLinePtr[0] == '\n' || nextLinePtr[0] == '\r' ))
+      {
+        nextLinePtr = (nextLinePtr + 1);
+      }
+    }
+    while ((strncmp("#", nextLinePtr, 1) == 0) || (strlen(nextLinePtr) == 0));
+  }
+
   template <int dim>
   void ElasticProblem<dim>::run ()
   {
+
+    char fileName[MAXLINE];
+    std::cout << "Please enter an input file (or nothing to use default values): " << std::endl;
+    std::cin >> fileName;
+    read_input_file(fileName);
 
     create_mesh();
 
     setup_system();
 
-    std::cout << "   Number of active cells:       "
+    std::cout << "\n   Number of active cells:       "
               << triangulation.n_active_cells()
               << std::endl;
 
 
     std::cout << "   Number of degrees of freedom: "
               << dof_handler.n_dofs()
-              << std::endl;
+              << std::endl << std::endl;
 
 
     // small pertubations are added to the non-constrained DoFs. This is so that in the isotropic case
@@ -1208,18 +1216,26 @@ namespace NeoHookean_Newton
 
     double lambda_step = final_lambda/load_steps;
     double lambda = 0.0;
-    for(int i = 0; i < load_steps; i++)
+    for(unsigned int i = 0; i < load_steps; i++)
     {
+
+      // update lambda
       lambda +=lambda_step;
+      std::cout << "Load step "<< i + 1 << " With loading paramater lambda = " << lambda << std::endl;
+
       update_F0(lambda);
+
       newton_iterate(tol, 50);
 
+      // get energy and congugate lambda value and save them.
       assemble_system_energy_and_congugate_lambda(lambda);
       lambda_values[i] = lambda;
       congugate_lambda_values[i] = congugate_lambda;
       energy_values[i] = system_energy;
 
       std::cout << "    System Energy: " << system_energy << "\n\n";
+
+      // output data if we're on the right step.
       if(i%output_every_n == 0)
         output_results (i/output_every_n);
     }
@@ -1227,6 +1243,9 @@ namespace NeoHookean_Newton
     output_load_info(lambda_values, energy_values, congugate_lambda_values);
   }
 }
+
+
+
 
 
 int main ()

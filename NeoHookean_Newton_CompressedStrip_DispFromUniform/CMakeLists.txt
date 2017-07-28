@@ -1,5 +1,5 @@
 ##
-#  CMake script for the linear elastic principle program:
+#  CMake script for the NeoHookean_Newton program:
 ##
 
 # Set the name of the project and target:

@@ -1,0 +1,18 @@
+# this is an example input file for the NeoHookean_Newton_CompressedStrip code.
+# Blank lines and ones starting with '#' are ignored.
+
+# Dimensions of grids in x1 and x2, respectfully: unsigned int     unsigned int
+30    10
+
+# Dimensions of the domain in x1 and x2 respectfully (periodic in x1): double     double
+6.4   1.2
+
+# final loading value (0 for no loading) and
+# number of steps to get to the value, respectfully: double  unsigned int
+0.37  10
+
+# Number of steps for every output. (outputs at fist and this many steps later): unsigned int
+9
+
+# Absolute tolerance on the l2 norm of the residual for the newton iteration: double
+1e-10
