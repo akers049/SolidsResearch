@@ -56,12 +56,12 @@
 #include <fstream>
 #include <iostream>
 
+#include <sys/types.h>
+#include <sys/stat.h>
+
 #define MAXLINE 1024
 #define MU_VALUE 1.0
 #define NU_VALUE 0.33
-
-
-
 
 
 
@@ -100,7 +100,7 @@ namespace NeoHookean_Newton
     void setup_system ();
     void set_boundary_values();
     void update_F0(const double lambda);
-    void add_small_pertubations(double amplitude);
+    void add_small_pertubations(double amplitude, bool firstTime);
     void assemble_system_matrix();
     void assemble_system_rhs();
     void assemble_system_energy_and_congugate_lambda(double lambda);
@@ -197,24 +197,6 @@ namespace NeoHookean_Newton
 
   };
 
-  /****  UnfiromDeformation *****
-   * This is a class used ONLY by the output results to trasform
-   * coordinates for outputing the deformed mesh...
-   */
-  template <int dim>
-  class UniformDeformation
-  {
-
-  public:
-    UniformDeformation(Tensor<dim, dim> F_init) : F0(F_init){}
-    Point<dim> operator() (const Point<dim> &p) const { return Point<2>(F0[0][0]*p(0), F0[1][1]*p(1));}
-
-  private:
-    Tensor<dim, dim>   F0;
-
-  };
-
-
   /****************************************************************
                        Function Definitions
   ****************************************************************/
@@ -228,7 +210,7 @@ namespace NeoHookean_Newton
 
     // Put your function for nu. p(0) is x1 value, p(1) is the x2 value
 
-    double nuValue = NU_VALUE + 0.2*(p(1) - 0.5);
+    double nuValue = NU_VALUE + 0.0*(p(1) - 0.5);
 
     return nuValue;
   }
@@ -555,11 +537,12 @@ namespace NeoHookean_Newton
 
 
   template <int dim>
-  void ElasticProblem<dim>::add_small_pertubations(double amplitude)
+  void ElasticProblem<dim>::add_small_pertubations(double amplitude, bool firstTime)
   {
     // This is just to make the solution vector non-zero so it doesn't start at the right answer.
 
-    std::srand(5); //some seed
+    if(firstTime)
+      std::srand(5); //some seed
 
     for(unsigned int i = 0; i < dof_handler.n_dofs(); i++)
     {
@@ -915,6 +898,9 @@ namespace NeoHookean_Newton
   void ElasticProblem<dim>::output_results (const unsigned int cycle) const
   {
 
+    std::ostringstream cycle_str;
+    cycle_str << cycle;
+
     std::vector<std::string> solution_names;
     switch (dim)
       {
@@ -935,13 +921,14 @@ namespace NeoHookean_Newton
         break;
       }
 
-
+    // See if the output file exists. If not, make the directory.
+    struct stat st;
+    if (stat("./output", &st) == -1)
+        mkdir("./output", 0700);
 
     // output the total displacements. this requires adding in the uniform solution on top of the displacements
-
-    std::string filename0 = "total_displacement-";
-    filename0 += ('0' + cycle);
-    Assert (cycle < 100, ExcInternalError());
+    std::string filename0 = "output/total_displacement-";
+    filename0 += cycle_str.str();
 
     filename0 += ".vtk";
     std::ofstream output_totalDisp (filename0.c_str());
@@ -1014,9 +1001,8 @@ namespace NeoHookean_Newton
 
     // Now output the displacements from uniform solution
 
-    std::string filename1 = "displacement_from_uniform-";
-    filename1 += ('0' + cycle);
-    Assert (cycle < 100, ExcInternalError());
+    std::string filename1 = "output/displacement_from_uniform-";
+    filename1 += cycle_str.str();
 
     filename1 += ".vtk";
     std::ofstream output_disp_from_uniform (filename1.c_str());
@@ -1041,8 +1027,8 @@ namespace NeoHookean_Newton
     MappingQEulerian<dim> q_mapping(1,  dof_handler, shifted_solution);
     deformed_data_out.build_patches(q_mapping, 1);
 
-    std::string filename2 = "deformed_mesh-";
-    filename2 += ('0' + cycle);
+    std::string filename2 = "output/deformed_mesh-";
+    filename2 += cycle_str.str();
     filename2 += ".vtk";
     std::ofstream output_deformed_mesh(filename2.c_str());
     deformed_data_out.write_vtk(output_deformed_mesh);
@@ -1056,7 +1042,13 @@ namespace NeoHookean_Newton
                                              std::vector<double> congugate_lambda_values) const
   {
 
-    std::string filename = "load_info.txt";
+    // see if output directory exists, if not create it
+    struct stat st;
+    if (stat("./output", &st) == -1)
+        mkdir("./output", 0700);
+
+    // output the lambda value, system energy, and the congugate lambda vales for each step
+    std::string filename = "output/load_info.txt";
     std::ofstream load_data_output;
     load_data_output.open(filename.c_str());
     load_data_output << "# lambda";
@@ -1146,6 +1138,7 @@ namespace NeoHookean_Newton
 
     if (fileReadErrorFlag)
     {
+      // default parameter values
       grid_dimensions[0] = 10;
       grid_dimensions[1] = 10;
       domain_dimensions[0] = 1;
@@ -1186,7 +1179,7 @@ namespace NeoHookean_Newton
   {
 
     char fileName[MAXLINE];
-    std::cout << "Please enter an input file (or nothing to use default values): " << std::endl;
+    std::cout << "Please enter an input file: " << std::endl;
     std::cin >> fileName;
     read_input_file(fileName);
 
@@ -1206,7 +1199,7 @@ namespace NeoHookean_Newton
 
     // small pertubations are added to the non-constrained DoFs. This is so that in the isotropic case
     // when the expected solution vector is zero, it doesn't just start at the "right answer"...
-    add_small_pertubations(0.01);
+    add_small_pertubations(0.01, true);
 
     set_boundary_values();
 

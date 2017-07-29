@@ -5,7 +5,7 @@ It uses an energy function of the following form:
 
   W(I, II) = mu*[0.5*(I - 2 - log(II)) + (nu/(1-nu))*(sqrt(II) - 1)^2]
 
-  where I and II are the trance and determinant of the cauchy green tensor, respectfully.
+  where I and II are the trace and determinant of the cauchy green tensor, respectfully.
   mu and nu are material parameters.
 
 Calling format:
@@ -28,7 +28,7 @@ Input file format: (an example input file is included in exampleInputFile.txt)
 
   - final line is absolute tolerance on the l2 norm of the residual for the newton iteration.
 
-Outputs:
+Outputs (outputted to a directory named "output")
 
   - "load_info.txt"                      : This is a text file which is outputted at the end of the program.
                                            it has data for the loading steps, energy values, and congugate

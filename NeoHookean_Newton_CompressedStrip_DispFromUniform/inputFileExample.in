@@ -5,11 +5,11 @@
 30    10
 
 # Dimensions of the domain in x1 and x2 respectfully (periodic in x1): double     double
-6.4   1.2
+3.0   1.0
 
 # final loading value (0 for no loading) and
 # number of steps to get to the value, respectfully: double  unsigned int
-0.37  10
+0.3 10
 
 # Number of steps for every output. (outputs at fist and this many steps later): unsigned int
 9
