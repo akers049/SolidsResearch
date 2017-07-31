@@ -12,7 +12,7 @@
 0.3 10
 
 # Number of steps for every output. (outputs at fist and this many steps later): unsigned int
-9
+5
 
 # Absolute tolerance on the l2 norm of the residual for the newton iteration: double
 1e-10

@@ -205,7 +205,7 @@ namespace NeoHookean_Newton
   double NuFunction<dim>::value (const Point<dim>  &p,
                                  const unsigned int  component) const
   {
-    // this is a scalar function, so make sure compnent is zero...
+    // this is a scalar function, so make sure component is zero...
     Assert (component == 0, ExcNotImplemented());
 
     // Put your function for nu. p(0) is x1 value, p(1) is the x2 value
@@ -230,7 +230,7 @@ namespace NeoHookean_Newton
   double MuFunction<dim>::value (const Point<dim>  &p,
                                  const unsigned int  component) const
   {
-    // this is a scalar function, so make sure compnent is zero...
+    // this is a scalar function, so make sure component is zero...
     Assert (component == 0, ExcNotImplemented());
 
     // Put your function for mu. p(0) is x1 value, p(1) is the x2 value
@@ -1081,7 +1081,7 @@ namespace NeoHookean_Newton
     fid = std::fopen(filename, "r");
     if (fid == NULL)
     {
-      std::cout << "Unable to open file '" << filename << "', using default values" << std::endl;
+      std::cout << "Unable to open file \"" << filename  << "\"" <<  std::endl;
       fileReadErrorFlag = true;
     }
     else
@@ -1139,17 +1139,11 @@ namespace NeoHookean_Newton
     if (fileReadErrorFlag)
     {
       // default parameter values
-      grid_dimensions[0] = 10;
-      grid_dimensions[1] = 10;
-      domain_dimensions[0] = 1;
-      domain_dimensions[1] = 1;
-      final_lambda = 0.1;
-      load_steps = 10;
-      output_every_n = 9;
-      tol = 1e-10;
+      std::cout << "Error reading input file, Exiting.\n" << std::endl;
+      exit(1);
     }
     else
-      std::cout << "Input file sucessfully read" << std::endl;
+      std::cout << "Input file successfully read" << std::endl;
 
   }
 
@@ -1197,11 +1191,14 @@ namespace NeoHookean_Newton
               << std::endl << std::endl;
 
 
-    // small pertubations are added to the non-constrained DoFs. This is so that in the isotropic case
+    // small perturbations are added to the non-constrained DoFs. This is so that in the isotropic case
     // when the expected solution vector is zero, it doesn't just start at the "right answer"...
     add_small_pertubations(0.01, true);
 
     set_boundary_values();
+
+    // output inital mesh
+    output_results (0);
 
     std::vector<double> lambda_values(load_steps);
     std::vector<double> congugate_lambda_values(load_steps);
@@ -1214,7 +1211,7 @@ namespace NeoHookean_Newton
 
       // update lambda
       lambda +=lambda_step;
-      std::cout << "Load step "<< i + 1 << " With loading paramater lambda = " << lambda << std::endl;
+      std::cout << "Load step "<< i + 1 << " With loading parameter lambda = " << lambda << std::endl;
 
       update_F0(lambda);
 
@@ -1229,8 +1226,8 @@ namespace NeoHookean_Newton
       std::cout << "    System Energy: " << system_energy << "\n\n";
 
       // output data if we're on the right step.
-      if(i%output_every_n == 0)
-        output_results (i/output_every_n);
+      if((i+1)%output_every_n == 0)
+        output_results ((i+1)/output_every_n);
     }
 
     output_load_info(lambda_values, energy_values, congugate_lambda_values);

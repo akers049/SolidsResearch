@@ -22,13 +22,14 @@ Input file format: (an example input file is included in exampleInputFile.txt)
     the size of the strip.
 
   - Next line is the final loading value (between zero and 1) and the number of load steps to
-    get to the final value.
+    get to the final value. For the compressed strip, (lambda - 1.0) is the stretch in the x1
+    direction. So lambda of 0.0 is no loading.
 
-  - Next line is the number of steps between outputs.
+  - Next line is the number of steps between outputs. It outputs at the first step then once every this many steps.
 
   - final line is absolute tolerance on the l2 norm of the residual for the newton iteration.
 
-Outputs (outputted to a directory named "output")
+Outputs (outputted to a directory named "./output" from the cwd)
 
   - "load_info.txt"                      : This is a text file which is outputted at the end of the program.
                                            it has data for the loading steps, energy values, and congugate
@@ -51,7 +52,7 @@ Outputs (outputted to a directory named "output")
 
 With the input file you can change the details of the mesh, domain, and loading. This can be done without having to recompile the code.
 But to change the functions for the mu and nu values, you will have to go into the code and change them maunually. These can be found
-the MuFunctionn::value() and NuFunctionn::value() functions on lines 222 and 247, respectfully.
+the MuFunctionn::value() and NuFunctionn::value() functions on lines 213 and 238 respectfully of NeoHookean_Newton_CompressedStrip.cc.
 
 
 Included files:
@@ -60,3 +61,4 @@ Included files:
   NeoHookean_Newton_CompressedStrip.cc     : Code
   exampleInputFile.in                      : An example input file
   README                                   : this one
+  output/                                  : where all of the output goes
