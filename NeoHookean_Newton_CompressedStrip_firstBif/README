@@ -1,0 +1,64 @@
+This directory NeoHookean_Newton_CompressedStrip_DispFromUniform contains a nonlinear finite
+element calculation of a 2-D strip of a NeoHookean material in compression.
+
+It uses an energy function of the following form:
+
+  W(I, II) = mu*[0.5*(I - 2 - log(II)) + (nu/(1-nu))*(sqrt(II) - 1)^2]
+
+  where I and II are the trace and determinant of the cauchy green tensor, respectfully.
+  mu and nu are material parameters.
+
+Calling format:
+
+  printf "input_file_name" | ./NeoHookean_Newton_CompressedStrip
+
+Input file format: (an example input file is included in exampleInputFile.txt)
+  - blank lines and ones starting with a '#' are ignored
+
+  - First line is the grid dimensions in the x1 and x2 direction, respectfully. This controls how
+    fine the mesh is.
+
+  - Next line is the domain dimensions in the x1 and x2 direction, respectfully. This controls
+    the size of the strip.
+
+  - Next line is the final loading value (between zero and 1) and the number of load steps to
+    get to the final value. For the compressed strip, (lambda - 1.0) is the stretch in the x1
+    direction. So lambda of 0.0 is no loading.
+
+  - Next line is the number of steps between outputs. It outputs at the first step then once every this many steps.
+
+  - final line is absolute tolerance on the l2 norm of the residual for the newton iteration.
+
+Outputs (outputted to a directory named "./output" from the cwd)
+
+  - "load_info.txt"                      : This is a text file which is outputted at the end of the program.
+                                           it has data for the loading steps, energy values, and congugate
+                                           lambda values. The first column is the loading value, second is
+                                           the system energy, and final column is the congugate lambda value
+
+  Output frequency of the following are dictated by the value on the 4th input line of the input file
+
+  - "displacement_from_uniform-*.vtk"    : This is a vtk file that has the refence mesh, and the values of the
+                                           solution vector of the FEM, which is the displacements from the
+                                           uniform compression of isotropic strip with mu = 1 and nu = 0.33.
+
+  - "total_displacement-*.vtk"           : This is a vtk file that has the refence mesh and the values of the
+                                           total displacement of the nodes (this is the solution vector plus the
+                                           uniform compression displacements).
+
+  - "deformed_mesh-*.vtk"                : This is a vtk file with the DEFORMED MESH and the vales of the
+                                           total displacement of the nodes (this is the solution vector plus the
+                                           uniform compression displacements).
+
+With the input file you can change the details of the mesh, domain, and loading. This can be done without having to recompile the code.
+But to change the functions for the mu and nu values, you will have to go into the code and change them maunually. These can be found
+the MuFunctionn::value() and NuFunctionn::value() functions on lines 213 and 238 respectfully of NeoHookean_Newton_CompressedStrip.cc.
+
+
+Included files:
+
+  CMakeLists.txt                           : file that dealii uses to make the make file
+  NeoHookean_Newton_CompressedStrip.cc     : Code
+  exampleInputFile.in                      : An example input file
+  README                                   : this one
+  output/                                  : where all of the output goes
