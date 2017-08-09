@@ -134,8 +134,8 @@ namespace NeoHookean_Newton
     Vector<double>       newton_update;
     Vector<double>       system_rhs;
 
-    double               system_energy = 0;
-    double               congugate_lambda = 0;
+    double               system_energy = 0.0;
+    double               congugate_lambda = 0.0;
 
     Tensor<2,dim>        F0;
 
@@ -380,8 +380,12 @@ namespace NeoHookean_Newton
   template <int dim>
   void ElasticProblem<dim>::create_mesh()
   {
-    // creates our strip.
 
+    // set domain dimensions
+    domain_dimensions[0] = 2.0*(4.0*atan(1.0))/critical_frequency;
+    domain_dimensions[1] = 1.0;
+
+    // creates our strip.
     Point<dim> corner1, corner2;
     corner1(0) = -domain_dimensions[0]/2.0;
     corner1(1) =  0.0;
@@ -510,9 +514,9 @@ namespace NeoHookean_Newton
           double x2_coord = support_points[i](1);
           for (unsigned int j = 0; j < number_dofs; j++)
           {
-            if (is_x2_comp[i])
+            if (is_x2_comp[j])
             {
-              if ((x1_coord == -support_points[i](0)) && (x2_coord == support_points[i](1)))
+              if ((fabs(x1_coord + support_points[j](0)) < 1e-12 ) && (fabs(x2_coord - support_points[j](1)) < 1e-12))
               {
                 constraints.add_line (i);
                 constraints.add_entry (i, j, 1);
@@ -708,7 +712,7 @@ namespace NeoHookean_Newton
     std::vector<double>     nu_values (n_q_points);
     std::vector<double>     mu_values (n_q_points);
 
-    MuFunction<dim>  mu;
+    MuFunction<dim>  mu(kappa);
     NuFunction<dim>  nu;
 
     typename DoFHandler<dim>::active_cell_iterator cell = dof_handler.begin_active(),
@@ -808,7 +812,7 @@ namespace NeoHookean_Newton
     std::vector<double>     nu_values (n_q_points);
     std::vector<double>     mu_values (n_q_points);
 
-    MuFunction<dim> mu;
+    MuFunction<dim> mu(kappa);
     NuFunction<dim> nu;
 
     std::vector<Tensor<1, dim> > rhs_values (n_q_points);
@@ -900,7 +904,7 @@ namespace NeoHookean_Newton
     std::vector<double>     mu_values (n_q_points);
 
     NuFunction<dim> nu;
-    MuFunction<dim> mu;
+    MuFunction<dim> mu(kappa);
 
     std::vector<Tensor<1, dim> > rhs_values (n_q_points);
 
@@ -1202,15 +1206,6 @@ namespace NeoHookean_Newton
         goto fileClose;
       }
 
-      // Read in the domain dimensions
-      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%lg %lg", &domain_dimensions[0], &domain_dimensions[1]);
-      if(valuesWritten != 2)
-      {
-        fileReadErrorFlag = true;
-        goto fileClose;
-      }
-
       // read in the absolute tolerance of newton iteration
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
       valuesWritten = sscanf(nextLine, "%lg", &tol);
@@ -1340,15 +1335,51 @@ namespace NeoHookean_Newton
 
     // small perturbations are added to the non-constrained DoFs. This is so that in the isotropic case
     // when the expected solution vector is zero, it doesn't just start at the "right answer"...
+    //add_small_pertubations(0.01, true);
+
 
     set_boundary_values();
 
-    add_first_bif_displacements(0.001);
+   //  add_first_bif_displacements(0.001);
 
     update_F0(0.0);
+    newton_iterate(tol, 50);
+    output_results (0);
+
+    update_F0(critical_lambda);
+    newton_iterate(tol, 50);
+    output_results (1);
+
+    /*
+    assemble_system_matrix();
+    FullMatrix<double> systemMatFullBefore(dof_handler.n_dofs());
+    for (unsigned int i = 0; i < dof_handler.n_dofs(); i ++)
+      for (unsigned int j = 0; j < dof_handler.n_dofs(); j ++)
+        systemMatFullBefore[i][j] = system_matrix.el(i, j);
+
+    std::cout << "\ndeterminant of the system matrix before bif point : \n    " << systemMatFullBefore.determinant() << std::endl;
+    */
+
+    add_first_bif_displacements(0.05);
+
+    update_F0(critical_lambda + 0.00001);
+    newton_iterate(tol, 50);
+    output_results (2);
+
+
+    /*
+    assemble_system_matrix();
+
+    FullMatrix<double> systemMatFullAfter(dof_handler.n_dofs());
+    for (unsigned int i = 0; i < dof_handler.n_dofs(); i ++)
+      for (unsigned int j = 0; j < dof_handler.n_dofs(); j ++)
+        systemMatFullAfter[i][j] = system_matrix.el(i, j);
+
+    std::cout << "\ndeterminant of the system matrix after bif point : \n    " << systemMatFullAfter.determinant() << std::endl;
+    */
+
 
     // output initial mesh
-    output_results (0);
 /*
     std::vector<double> lambda_values(load_steps);
     std::vector<double> congugate_lambda_values(load_steps);
