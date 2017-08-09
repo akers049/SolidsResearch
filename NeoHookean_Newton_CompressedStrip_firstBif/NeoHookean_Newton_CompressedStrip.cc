@@ -20,7 +20,6 @@
 #include <deal.II/base/function.h>
 #include <deal.II/base/tensor.h>
 
-#include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/constraint_matrix.h>
 
 #include <deal.II/lac/full_matrix.h>
@@ -411,20 +410,17 @@ namespace NeoHookean_Newton
 
     // now do constraints that the average x1 displacement on boundary 2 is zero
 
+    const unsigned int   number_dofs = dof_handler.n_dofs();
+
     std::vector<bool> x1_components = {true, false};
     ComponentMask x1_mask(x1_components);
 
-    std::vector<bool> boundary_dof_x1 (dof_handler.n_dofs(), false);
-    std::vector<bool> boundary_0_dof_x1 (dof_handler.n_dofs(), false);
-    std::vector<bool> boundary_1_dof_x1 (dof_handler.n_dofs(), false);
+    std::vector<bool> boundary_dof_x1 (number_dofs, false);
+    std::vector<bool> boundary_01_dof_x1 (number_dofs, false);
 
-
-    std::set< types::boundary_id > boundary_id_0;
-    boundary_id_0.insert(0);
-
-    std::set< types::boundary_id > boundary_id_1;
-    boundary_id_1.insert(1);
-
+    std::set< types::boundary_id > boundary_id_01;
+    boundary_id_01.insert(0);
+    boundary_id_01.insert(1);
 
     DoFTools::extract_boundary_dofs(dof_handler,
                                     x1_mask,
@@ -432,19 +428,15 @@ namespace NeoHookean_Newton
 
     DoFTools::extract_boundary_dofs (dof_handler,
                                      x1_mask,
-                                     boundary_0_dof_x1,
-                                     boundary_id_0);
+                                     boundary_01_dof_x1,
+                                     boundary_id_01);
 
-    DoFTools::extract_boundary_dofs (dof_handler,
-                                     x1_mask,
-                                     boundary_1_dof_x1,
-                                     boundary_id_1);
 
 
     unsigned int first_boundary_dof = 0;
     for (unsigned int i=0; i<dof_handler.n_dofs(); ++i)
     {
-      if ((boundary_dof_x1[i] == true) && (boundary_0_dof_x1[i] == false) && (boundary_1_dof_x1[i] == false))
+      if ((boundary_dof_x1[i] == true) && (boundary_01_dof_x1[i] == false))
       {
         first_boundary_dof = i;
         break;
@@ -460,6 +452,82 @@ namespace NeoHookean_Newton
         constraints.add_entry (first_boundary_dof, i, -1);
 
     }
+
+    // now do the constraint that the x2 displacements are symmetric about the line x1 = 0
+
+    // get the coords of the dofs
+    std::vector<Point<dim>> support_points(number_dofs);
+    MappingQ1<dim> mapping;
+    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
+
+    // get the vector that tells us it the dof is an x2 component
+    std::vector<bool> x2_components = {false, true};
+    ComponentMask x2_mask(x2_components);
+
+    std::vector<bool> is_x2_comp(number_dofs, false);
+
+    DoFTools::extract_dofs(dof_handler, x2_mask, is_x2_comp);
+
+    // get the vector that tells us if it is a boundary 2 x2 dof
+    // (these are already constrained to zero)
+
+    std::vector<bool> boundary_2_dof_x2 (number_dofs, false);
+
+    std::set< types::boundary_id > boundary_id_2;
+    boundary_id_2.insert(2);
+
+    DoFTools::extract_boundary_dofs(dof_handler,
+                                       x2_mask,
+                                       boundary_2_dof_x2,
+                                       boundary_id_2);
+
+    // and the vector if it is a boundary 0 or 1 x2 dof. These are already constrained to each other.
+    std::vector<bool> boundary_01_dof_x2 (number_dofs, false);
+    DoFTools::extract_boundary_dofs (dof_handler,
+                                     x2_mask,
+                                     boundary_01_dof_x2,
+                                     boundary_id_01);
+
+
+    std::vector<bool> is_constrained(number_dofs, false);
+    for(unsigned int i = 0; i < number_dofs; i++)
+    {
+      if (is_x2_comp[i])
+      {
+        if (boundary_2_dof_x2[i] || boundary_01_dof_x2[i] || is_constrained[i])
+        {
+          // these dofs have already been constrained!
+          continue;
+        }
+        else if (support_points[i](0) == 0.0)
+        {
+          // these are in the "miidle" so we don't constrained them
+          continue;
+        }
+        else
+        {
+          double x1_coord = support_points[i](0);
+          double x2_coord = support_points[i](1);
+          for (unsigned int j = 0; j < number_dofs; j++)
+          {
+            if (is_x2_comp[i])
+            {
+              if ((x1_coord == -support_points[i](0)) && (x2_coord == support_points[i](1)))
+              {
+                constraints.add_line (i);
+                constraints.add_entry (i, j, 1);
+                is_constrained[i] = true;
+                is_constrained[j] = true;
+              }
+
+            }
+            else
+              continue;
+            }
+          }
+        }
+      }
+
 
     constraints.close ();
 
@@ -568,66 +636,49 @@ namespace NeoHookean_Newton
   template <int dim>
   void ElasticProblem<dim>::add_first_bif_displacements(double epsilon)
   {
+   /* add the bifurcated solution to the current (zero) solution vector.
+    * epsilon scales the magnitude of the added bifurcated solution.
+    */
 
-    /* I couldnt figure out a better way to do this easily in dealii. What I am doing here is
-         * looping through all of the cells and their dofs, mapping the local dof to its global index,
-         * and seeing if we have displaced that global index yet. If not, adds the displacement
-         *  by using its coordinates and knowing which componenet the dof is (x1 or x2).
-         */
     std::vector<Point<dim>> support_points(dof_handler.n_dofs());
     MappingQ1<dim> mapping;
     DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
 
-    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
     const unsigned int   number_dofs = dof_handler.n_dofs();
-    std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
 
-    std::vector<bool> is_displaced(number_dofs, false);
+    Vector<double> shifted_solution(number_dofs);
 
-    unsigned int global_dof_indicie;
+    std::vector<bool> x1_components = {true, false};
+    ComponentMask x1_mask(x1_components);
 
-    typename DoFHandler<dim>::active_cell_iterator cell = dof_handler.begin_active(),
-                                                   endc = dof_handler.end();
-    for (; cell!=endc; ++cell)
+    std::vector<bool> is_x1_comp(number_dofs, false);
+
+    DoFTools::extract_dofs(dof_handler, x1_mask, is_x1_comp);
+
+    for (unsigned int i = 0; i < number_dofs; i++)
     {
-      cell->get_dof_indices (local_dof_indices);
-
-      for(unsigned int i  = 0; i < dofs_per_cell; i ++)
+      if(is_x1_comp[i])
       {
-        if (is_displaced[local_dof_indices[i]] == false)
-        {
-          // have not shifted this dof yet
-          global_dof_indicie = local_dof_indices[i];
-          const unsigned int component_i = fe.system_to_component_index(i).first;
-          if(component_i == 0)
-          {
-            // it is an x1 component
+        // it is an x1 component
 
-            double v1 = 0.0;
-            for (int j = 0; j < 4; j++)
-              v1 += amplitudes_v1[j]*exp(charateristic_roots[j]*support_points[global_dof_indicie](1));
+        double v1 = 0.0;
+        for (int j = 0; j < 4; j++)
+          v1 += amplitudes_v1[j]*exp(charateristic_roots[j]*support_points[i](1));
 
-            present_solution[global_dof_indicie] += -epsilon*sin(critical_frequency*support_points[global_dof_indicie](0))*v1;
-          }
-          else
-          {
-            // it is an x2 componenet
+        present_solution[i] += -epsilon*sin(critical_frequency*support_points[i](0))*v1;
+      }
+      else
+      {
+        // it is an x2 component
 
-            double v2 = 0.0;
-            for (int j = 0; j < 4; j++)
-              v2 += amplitudes_v2[j]*exp(charateristic_roots[j]*support_points[global_dof_indicie](1));
+        double v2 = 0.0;
+        for (int j = 0; j < 4; j++)
+          v2 += amplitudes_v2[j]*exp(charateristic_roots[j]*support_points[i](1));
 
-            present_solution[global_dof_indicie] += epsilon*cos(critical_frequency*support_points[global_dof_indicie](0))*v2;
+        present_solution[i] += epsilon*cos(critical_frequency*support_points[i](0))*v2;
 
-          }
-
-          is_displaced[global_dof_indicie] = true;
-        }
-        else
-          continue;
       }
     }
-
 
   }
 
@@ -1016,61 +1067,36 @@ namespace NeoHookean_Newton
     data_out_totalDisp.attach_dof_handler (dof_handler);
 
 
-
+    // Get the total displacement of each of the points.
     // Get the points of the dofs so we can do some shifting...
     std::vector<Point<dim>> support_points(dof_handler.n_dofs());
     MappingQ1<dim> mapping;
     DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
 
-    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
     const unsigned int   number_dofs = dof_handler.n_dofs();
-    std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
-
-
-    /* I couldnt figure out a better way to do this easily in dealii. What I am doing here is
-     * looping through all of the cells and their dofs, mapping the local dof to its global index,
-     * and seeing if we have shifted that global index yet. If not, apply the shift by using its coordinates
-     * and knowing which componenet the dof is (x1 or x2).
-     */
-
-    std::vector<bool> is_shifted(number_dofs, false);
-
-    unsigned int global_dof_indicie;
 
     Vector<double> shifted_solution(number_dofs);
-    typename DoFHandler<dim>::active_cell_iterator cell = dof_handler.begin_active(),
-                                                   endc = dof_handler.end();
-    for (; cell!=endc; ++cell)
+
+    std::vector<bool> x1_components = {true, false};
+    ComponentMask x1_mask(x1_components);
+
+    std::vector<bool> is_x1_comp(number_dofs, false);
+
+    DoFTools::extract_dofs(dof_handler, x1_mask, is_x1_comp);
+
+    for (unsigned int i = 0; i < number_dofs; i++)
     {
-      cell->get_dof_indices (local_dof_indices);
-
-      for(unsigned int i  = 0; i < dofs_per_cell; i ++)
+      if(is_x1_comp[i])
       {
-        if (is_shifted[local_dof_indices[i]] == false)
-        {
-          // have not shifted this dof yet
-          global_dof_indicie = local_dof_indices[i];
-          const unsigned int component_i = fe.system_to_component_index(i).first;
-          if(component_i == 0)
-          {
-            // it is an x1 component
-             shifted_solution[global_dof_indicie] = present_solution[global_dof_indicie] +
-                                                       support_points[global_dof_indicie](0)*(F0[0][0] - 1.0);
-          }
-          else
-          {
-            // it is an x2 componenet
-            shifted_solution[local_dof_indices[i]] = present_solution[global_dof_indicie] +
-                                                      support_points[global_dof_indicie](1)*(F0[1][1] - 1.0);
-          }
-
-          is_shifted[global_dof_indicie] = true;
-        }
-        else
-          continue;
+        // it is an x1 component
+        shifted_solution[i] = present_solution[i] + support_points[i](0)*(F0[0][0] - 1.0);
+      }
+      else
+      {
+        // it is an x2 component
+        shifted_solution[i] = present_solution[i] + support_points[i](1)*(F0[1][1] - 1.0);
       }
     }
-
 
     data_out_totalDisp.add_data_vector (shifted_solution, solution_names);
     data_out_totalDisp.build_patches ();
@@ -1317,7 +1343,7 @@ namespace NeoHookean_Newton
 
     set_boundary_values();
 
-    add_first_bif_displacements(0.01);
+    add_first_bif_displacements(0.001);
 
     update_F0(0.0);
 
