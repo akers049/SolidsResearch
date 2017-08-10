@@ -50,13 +50,16 @@
 
 #include <deal.II/fe/mapping_q_eulerian.h>
 
+#include <deal.II/lac/sparse_direct.h>
 #include <deal.II/lac/solver_minres.h>
+#include <deal.II/lac/lapack_full_matrix.h>
 
 #include <fstream>
 #include <iostream>
 
 #include <sys/types.h>
 #include <sys/stat.h>
+
 
 #define MAXLINE 1024
 #define MU_VALUE 1.0
@@ -97,6 +100,7 @@ namespace NeoHookean_Newton
 
     void create_mesh();
     void setup_system ();
+    void setup_constraints();
     void set_boundary_values();
     void update_F0(const double lambda);
     void add_small_pertubations(double amplitude, bool firstTime);
@@ -108,6 +112,7 @@ namespace NeoHookean_Newton
                         const unsigned int max_iteration);
     void line_search_and_add_step_length(double current_residual);
     void solve();
+    void get_system_eigenvalues(const unsigned int cycle);
     void output_results(const unsigned int cycle) const;
     void output_load_info(std::vector<double> lambda_values,
                           std::vector<double> energy_values,
@@ -134,6 +139,8 @@ namespace NeoHookean_Newton
     Vector<double>       newton_update;
     Vector<double>       system_rhs;
 
+    Vector<double>       system_eigenvalues;
+
     double               system_energy = 0.0;
     double               congugate_lambda = 0.0;
 
@@ -150,7 +157,7 @@ namespace NeoHookean_Newton
     std::vector<double> amplitudes_v1;
     std::vector<double> amplitudes_v2;
 
-
+    std::vector<int> matched_dofs;
 
   };
 
@@ -406,10 +413,31 @@ namespace NeoHookean_Newton
     IndexSet locally_relevant_dofs;
     DoFTools::extract_locally_relevant_dofs (dof_handler, locally_relevant_dofs);
 
+    setup_constraints();
+
+    newton_update.reinit(dof_handler.n_dofs());
+    system_rhs.reinit (dof_handler.n_dofs());
+
+    DynamicSparsityPattern dsp(dof_handler.n_dofs(), dof_handler.n_dofs());
+    DoFTools::make_sparsity_pattern(dof_handler,
+                                    dsp,
+                                    constraints,
+                                    /*keep_constrained_dofs = */ true);
+    sparsity_pattern.copy_from (dsp);
+
+    system_matrix.reinit (sparsity_pattern);
+
+  }
+
+  template <int dim>
+  void ElasticProblem<dim>::setup_constraints ()
+  {
     constraints.clear ();
 
     DoFTools::make_hanging_node_constraints (dof_handler, constraints);
 
+
+    // periodic in x1 and x2 for the 0 and 1 face (x1 faces)
     DoFTools::make_periodicity_constraints<DoFHandler<dim>>(dof_handler, 0, 1, 0, constraints);
 
     // now do constraints that the average x1 displacement on boundary 2 is zero
@@ -493,12 +521,12 @@ namespace NeoHookean_Newton
                                      boundary_id_01);
 
 
-    std::vector<bool> is_constrained(number_dofs, false);
+    matched_dofs.resize(number_dofs, -1);
     for(unsigned int i = 0; i < number_dofs; i++)
     {
       if (is_x2_comp[i])
       {
-        if (boundary_2_dof_x2[i] || boundary_01_dof_x2[i] || is_constrained[i])
+        if (boundary_2_dof_x2[i] || boundary_01_dof_x2[i] || (matched_dofs[i] != -1))
         {
           // these dofs have already been constrained!
           continue;
@@ -520,8 +548,9 @@ namespace NeoHookean_Newton
               {
                 constraints.add_line (i);
                 constraints.add_entry (i, j, 1);
-                is_constrained[i] = true;
-                is_constrained[j] = true;
+                matched_dofs[i] = j;
+                matched_dofs[j] = i;
+                continue;
               }
 
             }
@@ -534,19 +563,6 @@ namespace NeoHookean_Newton
 
 
     constraints.close ();
-
-
-    newton_update.reinit(dof_handler.n_dofs());
-    system_rhs.reinit (dof_handler.n_dofs());
-
-    DynamicSparsityPattern dsp(dof_handler.n_dofs(), dof_handler.n_dofs());
-    DoFTools::make_sparsity_pattern(dof_handler,
-                                    dsp,
-                                    constraints,
-                                    /*keep_constrained_dofs = */ true);
-    sparsity_pattern.copy_from (dsp);
-
-    system_matrix.reinit (sparsity_pattern);
 
   }
 
@@ -630,7 +646,14 @@ namespace NeoHookean_Newton
 
     for(unsigned int i = 0; i < dof_handler.n_dofs(); i++)
     {
-      present_solution[i] += (2.0*(std::rand()/double(RAND_MAX)) - 1.0)*amplitude;
+      if (matched_dofs[i] != -1)
+      {
+        double random_val =  0.5*(2.0*(std::rand()/double(RAND_MAX)) - 1.0)*amplitude;
+        present_solution[i] += random_val;
+        present_solution[matched_dofs[i]] += random_val;
+      }
+      else
+        present_solution[i] += (2.0*(std::rand()/double(RAND_MAX)) - 1.0)*amplitude;
     }
 
     evaluation_point = present_solution;
@@ -649,8 +672,6 @@ namespace NeoHookean_Newton
     DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
 
     const unsigned int   number_dofs = dof_handler.n_dofs();
-
-    Vector<double> shifted_solution(number_dofs);
 
     std::vector<bool> x1_components = {true, false};
     ComponentMask x1_mask(x1_components);
@@ -1013,6 +1034,8 @@ namespace NeoHookean_Newton
   template <int dim>
   void ElasticProblem<dim>::solve ()
   {
+
+    /*
     SolverControl           solver_control (10000, 1e-12);
     SolverCG<>              cg (solver_control);
 
@@ -1021,11 +1044,55 @@ namespace NeoHookean_Newton
 
     cg.solve (system_matrix, newton_update, system_rhs,
               preconditioner);
-
+*/
+    SparseDirectUMFPACK  A_direct;
+    A_direct.initialize(system_matrix);
+    A_direct.vmult (newton_update, system_rhs);
     constraints.distribute (newton_update);
 
   }
 
+  template<int dim>
+  void ElasticProblem<dim>::get_system_eigenvalues(const unsigned int cycle)
+  {
+
+
+    assemble_system_matrix();
+
+    // copy current sparse system matrix to a full matrix.
+    LAPACKFullMatrix<double> system_matrix_full;
+    system_matrix_full.copy_from(system_matrix);
+
+    system_matrix_full.compute_eigenvalues(false, false);
+
+    std::ostringstream cycle_str;
+    cycle_str << cycle;
+
+    std::string filename = "output/eigenvalues-";
+    filename += cycle_str.str();
+
+    std::ofstream outputFile;
+    outputFile.open(filename.c_str());
+
+    outputFile << "# eigenvalues of the system matrix" << std::endl;
+
+    bool positive_definite = true;
+    for (unsigned int i = 0 ; i < dof_handler.n_dofs(); i ++)
+    {
+      if (fabs(real(system_matrix_full.eigenvalue(i))) < 1.0)
+        outputFile << std::setprecision(15) << system_matrix_full.eigenvalue(i) << std::endl;
+
+      if (real(system_matrix_full.eigenvalue(i))  < 0.0)
+        positive_definite = false;
+    }
+
+    outputFile << "\nIs positive definite : " << positive_definite << std::endl;
+
+    outputFile.close();
+
+
+
+  }
 
   template <int dim>
   void ElasticProblem<dim>::output_results (const unsigned int cycle) const
@@ -1335,7 +1402,7 @@ namespace NeoHookean_Newton
 
     // small perturbations are added to the non-constrained DoFs. This is so that in the isotropic case
     // when the expected solution vector is zero, it doesn't just start at the "right answer"...
-    //add_small_pertubations(0.01, true);
+    add_small_pertubations(0.001, true);
 
 
     set_boundary_values();
@@ -1346,25 +1413,45 @@ namespace NeoHookean_Newton
     newton_iterate(tol, 50);
     output_results (0);
 
-    update_F0(critical_lambda);
+    update_F0(critical_lambda - 0.01);
     newton_iterate(tol, 50);
     output_results (1);
+    get_system_eigenvalues(0);
 
-    /*
-    assemble_system_matrix();
-    FullMatrix<double> systemMatFullBefore(dof_handler.n_dofs());
-    for (unsigned int i = 0; i < dof_handler.n_dofs(); i ++)
-      for (unsigned int j = 0; j < dof_handler.n_dofs(); j ++)
-        systemMatFullBefore[i][j] = system_matrix.el(i, j);
-
-    std::cout << "\ndeterminant of the system matrix before bif point : \n    " << systemMatFullBefore.determinant() << std::endl;
-    */
-
-    add_first_bif_displacements(0.05);
-
-    update_F0(critical_lambda + 0.00001);
+    update_F0(critical_lambda + 0.02);
     newton_iterate(tol, 50);
     output_results (2);
+    get_system_eigenvalues(1);
+
+
+
+  //  add_first_bif_displacements(0.05);
+
+   // add_small_pertubations(0.01, false);
+   // set_boundary_values();
+
+ /*   update_F0(critical_lambda + 0.00001);
+    newton_iterate(tol, 50);
+    output_results (2);
+
+    update_F0(critical_lambda + 0.0001);
+    newton_iterate(tol, 50);
+    output_results (3);
+
+*/
+   /* for(int i = 0; i < 100; i ++)
+    {
+      update_F0(critical_lambda + 1e-5*i);
+      newton_iterate(tol, 50);
+      if ((i+1)%10 == 0)
+       output_results((i+1)/10 + 2);
+    }*/
+
+    /*
+    update_F0(critical_lambda + 0.000002);
+        newton_iterate(tol, 50);
+        output_results (3);
+*/
 
 
     /*
