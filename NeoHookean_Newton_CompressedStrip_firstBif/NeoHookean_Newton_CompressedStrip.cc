@@ -10,49 +10,7 @@
  * Author: Andrew Akerson
  */
 
-
-
-#include <deal.II/base/conditional_ostream.h>
-
-#include <deal.II/distributed/grid_refinement.h>
-
-#include <deal.II/base/quadrature_lib.h>
-#include <deal.II/base/function.h>
-#include <deal.II/base/tensor.h>
-
-#include <deal.II/lac/constraint_matrix.h>
-
-#include <deal.II/lac/full_matrix.h>
-#include <deal.II/lac/sparse_matrix.h>
-#include <deal.II/lac/dynamic_sparsity_pattern.h>
-#include <deal.II/lac/solver_cg.h>
-#include <deal.II/lac/precondition.h>
-
-#include <deal.II/grid/grid_generator.h>
-#include <deal.II/grid/grid_refinement.h>
-#include <deal.II/grid/tria_boundary_lib.h>
-#include <deal.II/grid/tria_accessor.h>
-#include <deal.II/grid/tria_iterator.h>
-#include <deal.II/grid/grid_tools.h>
-
-#include <deal.II/dofs/dof_handler.h>
-#include <deal.II/dofs/dof_accessor.h>
-#include <deal.II/dofs/dof_renumbering.h>
-#include <deal.II/dofs/dof_tools.h>
-
-#include <deal.II/fe/fe_q.h>
-#include <deal.II/fe/fe_system.h>
-
-#include <deal.II/numerics/vector_tools.h>
-#include <deal.II/numerics/matrix_tools.h>
-#include <deal.II/numerics/data_out.h>
-#include <deal.II/numerics/error_estimator.h>
-
-#include <deal.II/fe/mapping_q_eulerian.h>
-
-#include <deal.II/lac/sparse_direct.h>
-#include <deal.II/lac/solver_minres.h>
-#include <deal.II/lac/lapack_full_matrix.h>
+#include "NeoHookean_Newton_CompressedStrip.h"
 
 #include <fstream>
 #include <iostream>
@@ -71,149 +29,6 @@ namespace NeoHookean_Newton
 {
   using namespace dealii;
 
-  /****************************************************************
-                       Class Declarations
-  ****************************************************************/
-
-  /****  ElasticProblem  *****
-   * This is the primary class used, with all the dealii stuff
-   */
-  template <int dim>
-  class ElasticProblem
-  {
-  public:
-    ElasticProblem();
-    ~ElasticProblem();
-    void run ();
-
-  private:
-    Tensor<2,dim> get_deformation_gradient(std::vector<Tensor<1,dim> > old_solution_gradient);
-    Tensor<4,dim> get_incremental_moduli_tensor(const double nu,
-                                  const double mu,
-                                  std::vector<Tensor<1,dim> > old_solution_gradient);
-    Tensor<2,dim> get_piola_kirchoff_tensor(const double nu, const double mu,
-            std::vector<Tensor<1,dim> > old_solution_gradient);
-
-    double get_energy(const double nu, const double mu,
-          std::vector<Tensor<1,dim> > old_solution_gradient);
-
-
-    void create_mesh();
-    void setup_system ();
-    void setup_constraints();
-    void set_boundary_values();
-    void update_F0(const double lambda);
-    void add_small_pertubations(double amplitude, bool firstTime);
-    void add_first_bif_displacements(double epsilon);
-    void assemble_system_matrix();
-    void assemble_system_rhs();
-    void assemble_system_energy_and_congugate_lambda(double lambda);
-    void newton_iterate(const double tolerance,
-                        const unsigned int max_iteration);
-    void line_search_and_add_step_length(double current_residual);
-    void solve();
-    void get_system_eigenvalues(const unsigned int cycle);
-    void output_results(const unsigned int cycle) const;
-    void output_load_info(std::vector<double> lambda_values,
-                          std::vector<double> energy_values,
-                          std::vector<double> congugate_lambda_values) const;
-    void read_input_file(char* filename);
-    void getNextDataLine( FILE* const filePtr, char* nextLinePtr,
-                            int const maxSize, int* const endOfFileFlag);
-
-
-    Triangulation<dim>   triangulation;
-    DoFHandler<dim>      dof_handler;
-
-    FESystem<dim>        fe;
-
-    ConstraintMatrix     constraints;
-    std::vector<IndexSet>    owned_partitioning;
-    std::vector<IndexSet>    relevant_partitioning;
-
-    SparsityPattern      sparsity_pattern;
-    SparseMatrix<double> system_matrix;
-
-    Vector<double>       present_solution;
-    Vector<double>       evaluation_point;
-    Vector<double>       newton_update;
-    Vector<double>       system_rhs;
-
-    Vector<double>       system_eigenvalues;
-
-    double               system_energy = 0.0;
-    double               congugate_lambda = 0.0;
-
-    Tensor<2,dim>        F0;
-
-
-    std::vector<unsigned int>  grid_dimensions;
-    std::vector<double> domain_dimensions;
-    double tol = 0.0;
-    double kappa = 0.0;
-    double critical_lambda = 0.0;
-    double critical_frequency = 0.0;
-    std::vector<double> charateristic_roots;
-    std::vector<double> amplitudes_v1;
-    std::vector<double> amplitudes_v2;
-
-    std::vector<int> matched_dofs;
-
-  };
-
-
-  /****  NuFunction *****
-   * This is a dealii Function class for the nu function.
-   */
-
-  template <int dim>
-  class NuFunction : public Function<dim>
-  {
-
-  public:
-    NuFunction () : Function<dim>() {}
-    virtual ~NuFunction (){}
-
-    // const double PI = std::atan(1.0)*4;
-
-    virtual double value (const Point<dim> &p,
-                          const unsigned int  component = 0) const;
-
-    virtual void value_list(const std::vector< Point< dim > > &  points,
-                             std::vector< double > &   values,
-                             const unsigned int  component = 0 )   const;
-
-  };
-
-
-  /****  NuFunction *****
-   * This is a dealii Function class for the mu function.
-   */
-
-  template <int dim>
-  class MuFunction : public Function<dim>
-  {
-
-  public:
-    MuFunction (double expontential_growth_param) : Function<dim>()
-    {
-      kappa = expontential_growth_param;
-    }
-    virtual ~MuFunction (){}
-
-    // const double PI = std::atan(1.0)*4;
-
-    virtual double value (const Point<dim> &p,
-                          const unsigned int  component = 0) const;
-
-    virtual void value_list(const std::vector< Point< dim > > &  points,
-                             std::vector< double > &   values,
-                             const unsigned int  component = 0 )   const;
-
-    double kappa;
-    const double mu0 = 1.0;
-
-  };
 
   /****************************************************************
                        Function Definitions
@@ -763,15 +578,12 @@ namespace NeoHookean_Newton
           {
             const unsigned int component_m = fe.system_to_component_index(m).first;
 
-            for (unsigned int i=0; i<dim; ++i)
-              for (unsigned int j=0; j<dim; ++j)
-                for (unsigned int k=0; k<dim; ++k)
-                  for (unsigned int l=0; l<dim; ++l)
-                  {
-                    cell_matrix(n,m) += (d2W_dFdF[i][j][k][l]*
-                        ((i==component_n) && (k == component_m) ?
-                            fe_values.shape_grad(n, q_point)[j]*fe_values.shape_grad(m, q_point)[l] : 0.0))*fe_values.JxW(q_point);
-                  }
+            for (unsigned int j=0; j<dim; ++j)
+              for (unsigned int l=0; l<dim; ++l)
+              {
+                cell_matrix(n,m) += d2W_dFdF[component_n][j][component_m][l]*
+                        fe_values.shape_grad(n, q_point)[j]*fe_values.shape_grad(m, q_point)[l]*fe_values.JxW(q_point);
+              }
           }
         }
       }
@@ -862,11 +674,10 @@ namespace NeoHookean_Newton
         {
           const unsigned int component_n = fe.system_to_component_index(n).first;
 
-          for(unsigned int i = 0; i<dim; ++i)
-            for(unsigned int j = 0; j<dim; ++j)
-            {
-              cell_rhs(n) -= dW_dF[i][j]*(i==component_n ? fe_values.shape_grad(n, q_point)[j] : 0.0)*fe_values.JxW(q_point);
-            }
+          for(unsigned int j = 0; j<dim; ++j)
+          {
+            cell_rhs(n) -= dW_dF[component_n][j]*fe_values.shape_grad(n, q_point)[j]*fe_values.JxW(q_point);
+          }
 
           cell_rhs(n) += fe_values.shape_value(n, q_point)*rhs_values[q_point][component_n]*fe_values.JxW(q_point);
         }
@@ -1407,21 +1218,29 @@ namespace NeoHookean_Newton
 
     set_boundary_values();
 
-   //  add_first_bif_displacements(0.001);
 
     update_F0(0.0);
     newton_iterate(tol, 50);
     output_results (0);
-
-    update_F0(critical_lambda - 0.01);
-    newton_iterate(tol, 50);
-    output_results (1);
     get_system_eigenvalues(0);
 
-    update_F0(critical_lambda + 0.02);
+
+    update_F0(critical_lambda);
+    newton_iterate(tol, 50);
+    output_results (1);
+    get_system_eigenvalues(1);
+
+    update_F0(critical_lambda + 0.00001);
+    get_system_eigenvalues(2);
+
+
+    add_first_bif_displacements(0.02);
+    update_F0(critical_lambda + 0.00001);
     newton_iterate(tol, 50);
     output_results (2);
-    get_system_eigenvalues(1);
+    get_system_eigenvalues(3);
+
+
 
 
 
@@ -1439,31 +1258,22 @@ namespace NeoHookean_Newton
     output_results (3);
 
 */
-   /* for(int i = 0; i < 100; i ++)
+   for(int i = 0; i < 100; i ++)
     {
       update_F0(critical_lambda + 1e-5*i);
       newton_iterate(tol, 50);
-      if ((i+1)%10 == 0)
-       output_results((i+1)/10 + 2);
-    }*/
+      if ((i+1)%20 == 0)
+      {
+       output_results((i+1)/20 + 2);
+       get_system_eigenvalues((i+1)/20 + 3);
+      }
+    }
 
     /*
     update_F0(critical_lambda + 0.000002);
         newton_iterate(tol, 50);
         output_results (3);
 */
-
-
-    /*
-    assemble_system_matrix();
-
-    FullMatrix<double> systemMatFullAfter(dof_handler.n_dofs());
-    for (unsigned int i = 0; i < dof_handler.n_dofs(); i ++)
-      for (unsigned int j = 0; j < dof_handler.n_dofs(); j ++)
-        systemMatFullAfter[i][j] = system_matrix.el(i, j);
-
-    std::cout << "\ndeterminant of the system matrix after bif point : \n    " << systemMatFullAfter.determinant() << std::endl;
-    */
 
 
     // output initial mesh

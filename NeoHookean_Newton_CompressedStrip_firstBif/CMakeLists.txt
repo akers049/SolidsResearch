@@ -16,6 +16,7 @@ SET(TARGET "NeoHookean_Newton_CompressedStrip")
 # in the "CMake in user projects" page accessible from the "User info"
 # page of the documentation.
 SET(TARGET_SRC
+  ${TARGET}.h
   ${TARGET}.cc
   )
 
