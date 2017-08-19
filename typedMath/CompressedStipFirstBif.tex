@@ -1,0 +1,158 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath}
+\usepackage{stackengine}
+\stackMath
+
+	\addtolength{\oddsidemargin}{-.875in}
+	\addtolength{\evensidemargin}{-.875in}
+	\addtolength{\textwidth}{1.75in}
+
+	\addtolength{\topmargin}{-.875in}
+	\addtolength{\textheight}{1.75in}
+
+\DeclareMathOperator{\diag}{diag}
+
+\begin{document}
+
+We will be using compressible 2-D Neo-Hookean stored energy function $W$ of the form:
+\begin{equation} \label{eq:energyFunction}
+W=\mu(x_2)\left[\frac{1}{2}(I_1 - 2- \ln{I_2}) + \frac{\nu}{1-\nu}(\sqrt{I_2} - 1)^2\right]
+\end{equation}
+where $\nu$ is some constant material parameter, and $\mu(x_2)$ is a material parameter that only varies in the $x_2$ direction. $I_1$ and $I_2$ are the principle invariants of the Cauchy-Green tensor $\mathbf{C}$:
+\begin{equation} \label{eq:I_functions}
+I_1 = \mathrm{tr} \mathbf{C} \qquad I_2 = \mathrm{det} \mathbf{C}
+\end{equation}
+It will be useful for later to get the first and second derivatives of $W(I_1,I_2)$ with the deformation gradient $\mathbf{F}$, so lets do that now. The first can be found quickly through the chain rule:
+\begin{equation} \label{eq:dW_dF_chain}
+\frac{\partial W}{\partial \mathbf{F}} = \frac{\partial W}{\partial I_1}\frac{\partial I_1}{\partial \mathbf{F}} + \frac{\partial W}{\partial I_2}\frac{\partial I_2}{\partial \mathbf{F}}
+\end{equation}
+Giving:
+\begin{equation} \label{eq:dW_dF}
+\frac{\partial W}{\partial \mathbf{F}} = \mu(x_2)\left[\mathbf{F} - \mathbf{F}^{-1} + \frac{2\nu}{1-\nu}(I_2 - \sqrt{I_2})\mathbf{F}^{-T}\right]
+\end{equation}
+Or in index notation:
+\begin{equation} \label{eq:dW_dF_index}
+\frac{\partial W}{\partial F_{ij}} = \mu(x_2)\left[F_{ij} - F^{-1}_{ij} + \frac{2\nu}{1-\nu}(I_2 - \sqrt{I_2})F^{-1}_{ji}\right]
+\end{equation}
+Now for the second derivative:
+\begin{equation} \label{eq:d2W_dFF_pre}
+\frac{\partial W}{\partial F_{ij}F_{kl}} = \frac{\partial}{\partial F_{kl}}\left\{\mu(x_2)\left[F_{ij} - F^{-1}_{ij} + \frac{2\nu}{1-\nu}(I_2 - \sqrt{I_2})F^{-1}_{ji}\right]\right\}
+\end{equation}
+Giving:
+\begin{equation} \label{eq:d2W_dFF}
+\begin{split}
+\frac{\partial W}{\partial F_{ij}F_{kl}} = \mu(x_2)\left[\delta_{ik}\delta_{jl} + F^{-1}_{jk}F^{-1}_{li} -
+\frac{2\nu}{1-\nu}(I_2 - \sqrt{I_2})F^{-1}_{jk}F^{-1}_{li} \right. + \\
+ \left. \frac{4\nu}{1- \nu}(I_2 - \frac{1}{2}\sqrt{I_2})F^{-1}_{lk}F^{-1}_{ji}\right]
+\end{split}
+\end{equation} 
+
+
+We will now move on to looking at the principle solution and later the first bifucated solution of the displacement control problem. The total energy of the system that has no body forces or applied tractions is:
+\begin{equation} \label{eq:energy}
+\mathcal{E} = \int_\Omega W(\mathbf{F}) \,dA
+\end{equation}
+Taking the first variation:
+\begin{equation} \label{eq:energy,u}
+\mathcal{E},_{\mathbf{u}}\cdot \delta\mathbf{u} = \int_\Omega \frac{\partial W}{\partial {F_{ij}}} \delta F_{ij} \,dA 
+\end{equation}
+For our principle solution, we will assume that $\stackon{\mathbf{F}}{0}$ is constant throughout the domain and is of the form $\stackon{\mathbf{F}}{0} = \diag[\lambda_1,\lambda_2]$. Then our Priola-Kirchoff stress evaluated on this proposed solution in a RCC corrdinate system aligned with the $x_1$ and $x_2$ axis is:
+\begin{equation} \label{eq:dW_dF_F0}
+\left . \frac{\partial W}{\partial \mathbf{F}} \right|_{\stackon{\mathbf{F}}{0}} = \diag[\Pi_{11}, \Pi_{22}]
+\end{equation}
+where
+\begin{equation*}
+\begin{aligned}
+\Pi_{11} &= \mu(x_2) \left [ \lambda_1 - \lambda_1^{-1} + \frac{2\nu}{1 -\nu}(\lambda_1 \lambda_2^2 - \lambda_2) \right ] , \\
+\Pi_{22} &= \mu(x_2) \left [ \lambda_2 - \lambda_2^{-1} + \frac{2\nu}{1 - \nu}(\lambda_1^2 \lambda_2 - \lambda_1) \right ] 
+\end{aligned}
+\end{equation*}
+Enforcing the zero normal traction on the free surface at $x_2 = L$ gives:
+\begin{equation} \label{eq:lambda_relation}
+\Pi_{22} |_{x_2 = L} = 0  \qquad or \qquad \lambda_2 - \lambda_2^{-1} + \frac{2\nu}{1 - \nu}(\lambda_1^2 \lambda_2 - \lambda_1) = 0
+\end{equation}
+Thus, equation \ref{eq:lambda_relation} gives a relationship of $\lambda_1$ to $\lambda_2$ in the form of a quadratic. For equillibrium of this principle solution we need:
+\begin{equation} \label{eq:eqbrm}
+\mathcal{E},_{\mathbf{u}}\cdot \delta\mathbf{u} = \int_\Omega \left . \frac{\partial W}{\partial {F_{ij}}} \right |_{\stackon{\mathbf{F}}{0}} \delta F_{ij} \,dA = 0
+\end{equation}
+This can be shown to be true by noting that for the displacement control in the $x_1$ direction requires that $\int_{-\infty}^{\infty} \delta F_{11} \,dx_1 = 0$. So the uniform stretching meets equilibrium criteria. Right now I am too lazy to type up that that it is stable, but I will. Its pretty easy to show that the incremental moduli and thus the second variation are positive definite for small $\lambda_1$. And the solution obviously goes through the origin. 
+
+Now that we have the principle solution, it is time to move onto the first bifurcated solution. Let's take the second variation of the energy (another variation of equation \ref{eq:energy,u}). 
+\begin{equation} \label{eq:second_var}
+(\mathcal{E},_{\mathbf{u} \mathbf{u}}\cdot \delta\mathbf{u}) \cdot \delta\hat{\mathbf{u}} = \int_\Omega  \frac{\partial W}{\partial F_{ij} F_{kl}} \delta F_{ij} \delta \hat{F}_{kl} \,dA
+\end{equation}
+When the first bifurcated solution $\stackon{\mathbf{u}}{1}$ occurs at some critical loading $\lambda_c$ we have the following:
+\begin{equation}
+(\mathcal{E},_{\mathbf{u} \mathbf{u}}(\stackon{\mathbf{u}}{0}, \lambda_c) \cdot \stackon{\mathbf{u}}{1}) \cdot \delta\mathbf{u} = \int_\Omega  \left. \frac{\partial W}{\partial F_{ij} F_{kl}} \right |_{\lambda_c} \stackon{u}{1}_{i,j} \delta u_{k,l} \,dA = 0
+\end{equation}
+Where the variations of deformation gradient have been replaced with equivalent variations of the displacement gradient. Integrating by parts gives:
+\begin{equation} \label{eq:byparts}
+\int_{\partial \Omega} L^c_{ijkl}(x_2) \: \stackon{u}{1}_{i,j} \: n_l \:  \delta u_k \: \,ds - \int_{\Omega} \left ( L^c_{ijkl}(x_2) \: \stackon{u}{1}_{i,j} \right )_{,l} \: \delta u_k \: \,dA = 0
+\end{equation}
+Where $\left. \frac{\partial W}{\partial F_{ij} F_{kl}} \right |_{\lambda_c}$ has been replaced by $L^c_{ijkl}(x_2)$ for brevity. The surface integral on the left gives us our natural boundary conditions. The boundary conditions on the free surface at $x_2 = L$ are:
+\begin{equation} \label{eq:bcAtL}
+\left . L^c_{ij12} \: \stackon{u}{1}_{i,j} \right |_{x_2 = L} = 0, \qquad
+\left . L^c_{ij22} \: \stackon{u}{1}_{i,j} \right |_{x_2 = L} = 0 
+\end{equation}
+Which correspond to the absence of shear and normal traction, respectfully. At $x_2 = 0$ :
+\begin{equation} \label{eq:shearAt0}
+\left . L^c_{ij12}(0) \: \stackon{u}{1}_{i, j}  \right |_{x_2 = 0} = 0
+\end{equation} 
+Which corresponds to no shear tractions at $x_2 = 0$. We also have the condition that the $x_2$ displacement at $x_2 = 0$ is fixed:
+\begin{equation}
+\left . u_2 \right |_{x_2 = 0} = 0 
+\end{equation}
+The other integrand in equation \ref{eq:byparts} gives a system of two linear PDE's:
+\begin{equation}
+\begin{aligned}
+L^c_{ij12,2} \: \stackon{u}{1}_{i,j} + L^c_{ij1l} \: \stackon{u}{1}_{i,jl} &= 0 \\
+L^c_{ij22,2} \: \stackon{u}{1}_{i,j} + L^c_{ij2l} \: \stackon{u}{1}_{i,jl} &= 0  
+\end{aligned}
+\end{equation}
+Where we have used the fact that the incremental moduli's is only dependent on $x_2$. This system of PDE's can then be expanded, using the symmetry of the incremental moduli to simplify the expansion. 
+\begin{equation} \label{eq:rawpde}
+\begin{aligned}
+L^c_{2112,2} \: \stackon{u}{1}_{2,1} + L^c_{1212,2} \: \stackon{u}{1}_{1,2} + L^c_{1111} \: \stackon{u}{1}_{1,11} + L^c_{1212} \: \stackon{u}{1}_{1,22}+ L^c_{2112} \: \stackon{u}{1}_{2,12}  + L^c_{1122} \: \stackon{u}{1}_{2,21} &= 0 \\
+L^c_{1122,2} \: \stackon{u}{1}_{1,1} + L^c_{2222,2} \: \stackon{u}{1}_{2,2} + L^c_{2222} \: \stackon{u}{1}_{2,22}+ L^c_{1212} \: \stackon{u}{1}_{2,11}+ L^c_{2112} \: \stackon{u}{1}_{1,12}  + L^c_{2211} \: \stackon{u}{1}_{1,21} &= 0
+\end{aligned}
+\end{equation}
+Now we will introduce the form of the $x_2$ dependent parameter $\mu$. For reasons that will be clear soon, it will be chosen to be an exponential of the form:
+\begin{equation}
+\mu(x_2) = \mu_0 e^{\kappa x_2}
+\end{equation}
+Then from equation \ref{eq:d2W_dFF} it can be seen that all of the $L^c_{ijkl}$'s are simply constant values multiplied with $\mu$. Then with our chosen form of $\mu$, $L^c_{ijkl,2} = \kappa L^c_{ijkl}$. Applying this to equation \ref{eq:rawpde} gives:
+\begin{equation} \label{eq:pde}
+\begin{aligned}
+\kappa L^{cc}_{2112} \: \stackon{u}{1}_{2,1} + \kappa L^{cc}_{1212} \: \stackon{u}{1}_{1,2} + L^{cc}_{1111} \: \stackon{u}{1}_{1,11} + L^{cc}_{1212} \: \stackon{u}{1}_{1,22}+ L^{cc}_{2112} \: \stackon{u}{1}_{2,12}  + L^{cc}_{1122} \: \stackon{u}{1}_{2,21} &= 0 \\
+\kappa L^{cc}_{1122} \: \stackon{u}{1}_{1,1} + \kappa L^{cc}_{2222} \: \stackon{u}{1}_{2,2} + L^{cc}_{2222} \: \stackon{u}{1}_{2,22}+ L^{cc}_{1212} \: \stackon{u}{1}_{2,11}+ L^{cc}_{2112} \: \stackon{u}{1}_{1,12}  + L^{cc}_{2211} \: \stackon{u}{1}_{1,21} &= 0
+\end{aligned}
+\end{equation}
+Where $L^{cc}_{ijkl}$ is the constant part of $L^{c}_{ijkl}$ as we have divided both equations throughout by $\mu(x_2)$.
+This system of linear PDE's with constant coefficients can be separated. I really don't want to type up all of the steps to that right now, but it can, OK? So if you believe me on that, the following form for the $x_1$ dependence is admitted.
+\begin{equation}
+\mathcal{A}^2 = 
+\left \{ 
+\begin{aligned} 
+  \stackon{u}{1}_1 &= -v_1(x_2)\sin(\omega x_1) \\
+  \stackon{u}{1}_2 &=  v_2(x_2)\cos(\omega x_1)
+\end{aligned} 
+\right \} , \qquad
+\mathcal{S}^2 = 
+\left \{ 
+\begin{aligned} 
+  \stackon{u}{1}_1 &= v_1(x_2)\cos(\omega x_1) - v_1(0) \\
+  \stackon{u}{1}_2 &=  v_2(x_2)\sin(\omega x_1)
+\end{aligned} 
+\right \}
+\end{equation}
+Where $\mathcal{A}^2$ and $\mathcal{S}^2$ denote the symmetric and antisymmetric $u_1$ modes about the $x_2$ axis, respectfully. And the $x_2$ dependence is:
+\begin{equation}
+v_1(x_2) = \sum_{i = 1}^{4}A_ie^{\alpha_i x_2}, \qquad v_2(x_2) = \sum_{i = 1}^{4} A_i B_i e^{\alpha_i x_2}
+\end{equation} 
+
+\end{document}
+
+
+
+
+
