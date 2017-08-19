@@ -777,8 +777,7 @@ namespace NeoHookean_Newton
   }
 
   template <int dim>
-  void ElasticProblem<dim>::newton_iterate(const double tolerance,
-                                           const unsigned int max_iteration)
+  void ElasticProblem<dim>::newton_iterate()
   {
     /* This function executes the newton iterations until it converges to a solution
      * or it exceeds the maximum number of iterations.
@@ -794,8 +793,8 @@ namespace NeoHookean_Newton
     current_residual = system_rhs.l2_norm();
 
     // Loops until coverge or go over max iterations
-    while((current_residual > tolerance) &&
-             (iteration < max_iteration))
+    while((current_residual > tol) &&
+             (iteration < maxIter))
     {
       // Assemble the stiffness matrix
       assemble_system_matrix();
@@ -874,7 +873,11 @@ namespace NeoHookean_Newton
     LAPACKFullMatrix<double> system_matrix_full;
     system_matrix_full.copy_from(system_matrix);
 
-    system_matrix_full.compute_eigenvalues(false, false);
+    Vector<double> eigenvalues;
+    FullMatrix<double> eigenvectors;
+
+
+    system_matrix_full.compute_eigenvalues_symmetric(-1.0, 1.0, 1e-6, eigenvalues, eigenvectors);
 
     std::ostringstream cycle_str;
     cycle_str << cycle;
@@ -888,20 +891,20 @@ namespace NeoHookean_Newton
     outputFile << "# eigenvalues of the system matrix" << std::endl;
 
     bool positive_definite = true;
-    for (unsigned int i = 0 ; i < dof_handler.n_dofs(); i ++)
+    for (unsigned int i = 0 ; i < eigenvalues.size(); i ++)
     {
-      if (fabs(real(system_matrix_full.eigenvalue(i))) < 1.0)
-        outputFile << std::setprecision(15) << system_matrix_full.eigenvalue(i) << std::endl;
+      double nextEigenVal = eigenvalues[i];
 
-      if (real(system_matrix_full.eigenvalue(i))  < 0.0)
+      outputFile << std::setprecision(15) << nextEigenVal << std::endl;
+
+      if (nextEigenVal < 0.0)
         positive_definite = false;
+
     }
 
     outputFile << "\nIs positive definite : " << positive_definite << std::endl;
 
     outputFile.close();
-
-
 
   }
 
@@ -1086,8 +1089,8 @@ namespace NeoHookean_Newton
 
       // read in the absolute tolerance of newton iteration
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%lg", &tol);
-      if(valuesWritten != 1)
+      valuesWritten = sscanf(nextLine, "%lg  %u", &tol, &maxIter);
+      if(valuesWritten != 2)
       {
         fileReadErrorFlag = true;
       }
@@ -1220,25 +1223,22 @@ namespace NeoHookean_Newton
 
 
     update_F0(0.0);
-    newton_iterate(tol, 50);
+    newton_iterate();
     output_results (0);
-    get_system_eigenvalues(0);
+ //   get_system_eigenvalues(0);
 
 
     update_F0(critical_lambda);
-    newton_iterate(tol, 50);
+    newton_iterate();
     output_results (1);
-    get_system_eigenvalues(1);
-
-    update_F0(critical_lambda + 0.00001);
-    get_system_eigenvalues(2);
+ //   get_system_eigenvalues(1);
 
 
     add_first_bif_displacements(0.02);
     update_F0(critical_lambda + 0.00001);
-    newton_iterate(tol, 50);
+    newton_iterate();
     output_results (2);
-    get_system_eigenvalues(3);
+ //   get_system_eigenvalues(2);
 
 
 
@@ -1258,16 +1258,32 @@ namespace NeoHookean_Newton
     output_results (3);
 
 */
-   for(int i = 0; i < 100; i ++)
+
+    unsigned int load_steps = 100;
+    std::vector<double> lambda_values(load_steps);
+    std::vector<double> congugate_lambda_values(load_steps);
+    std::vector<double> energy_values(load_steps);
+   for(unsigned int i = 0; i < load_steps; i ++)
     {
-      update_F0(critical_lambda + 1e-5*i);
-      newton_iterate(tol, 50);
-      if ((i+1)%20 == 0)
+
+     double lambda = critical_lambda - 5e-4*i;
+      update_F0(lambda);
+      newton_iterate();
+
+
+      // get energy and congugate lambda value and save them.
+            assemble_system_energy_and_congugate_lambda(lambda);
+            lambda_values[i] = lambda;
+            congugate_lambda_values[i] = congugate_lambda;
+            energy_values[i] = system_energy;
+
+      if ((i+1)%10 == 0)
       {
-       output_results((i+1)/20 + 2);
-       get_system_eigenvalues((i+1)/20 + 3);
+       output_results((i+1)/10 + 3);
+       get_system_eigenvalues((i+1)/10 + 3);
       }
     }
+   output_load_info(lambda_values, energy_values, congugate_lambda_values);
 
     /*
     update_F0(critical_lambda + 0.000002);
