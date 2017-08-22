@@ -75,7 +75,7 @@ Thus, equation \ref{eq:lambda_relation} gives a relationship of $\lambda_1$ to $
 \begin{equation} \label{eq:eqbrm}
 \mathcal{E},_{\mathbf{u}}\cdot \delta\mathbf{u} = \int_\Omega \left . \frac{\partial W}{\partial {F_{ij}}} \right |_{\stackon{\mathbf{F}}{0}} \delta F_{ij} \,dA = 0
 \end{equation}
-This can be shown to be true by noting that for the displacement control in the $x_1$ direction requires that $\int_{-\infty}^{\infty} \delta F_{11} \,dx_1 = 0$. So the uniform stretching meets equilibrium criteria. Right now I am too lazy to type up that that it is stable, but I will. Its pretty easy to show that the incremental moduli and thus the second variation are positive definite for small $\lambda_1$. And the solution obviously goes through the origin. 
+This can be shown to be true by noting that for the displacement control in the $x_1$ direction requires that $\int_{-\infty}^{\infty} \delta F_{11} \,dx_1 = 0$. So the uniform stretching meets equilibrium criteria. Right now I am too lazy to type up that that it is stable, but I will later. Its pretty easy to show that the incremental moduli and thus the second variation are positive definite for small $\lambda_1$. And the solution obviously goes through the origin. 
 
 Now that we have the principle solution, it is time to move onto the first bifurcated solution. Let's take the second variation of the energy (another variation of equation \ref{eq:energy,u}). 
 \begin{equation} \label{eq:second_var}
@@ -99,7 +99,7 @@ Which correspond to the absence of shear and normal traction, respectfully. At $
 \left . L^c_{ij12}(0) \: \stackon{u}{1}_{i, j}  \right |_{x_2 = 0} = 0
 \end{equation} 
 Which corresponds to no shear tractions at $x_2 = 0$. We also have the condition that the $x_2$ displacement at $x_2 = 0$ is fixed:
-\begin{equation}
+\begin{equation} \label{eq:dispAt0}
 \left . u_2 \right |_{x_2 = 0} = 0 
 \end{equation}
 The other integrand in equation \ref{eq:byparts} gives a system of two linear PDE's:
@@ -149,6 +149,53 @@ Where $\mathcal{A}^2$ and $\mathcal{S}^2$ denote the symmetric and antisymmetric
 \begin{equation}
 v_1(x_2) = \sum_{i = 1}^{4}A_ie^{\alpha_i x_2}, \qquad v_2(x_2) = \sum_{i = 1}^{4} A_i B_i e^{\alpha_i x_2}
 \end{equation} 
+These solutions can be plugged back into the original system of PDE's in equation \ref{eq:pde}. This results in the $\alpha_i$'s being the roots to the following quartic characteristic equation:
+\begin{equation} \label{eq:characteristic}
+a\alpha^4 + b\alpha^3 + c\alpha^2 + d\alpha + e = 0
+\end{equation}
+Where the coefficients are:
+\begin{equation*}
+\begin{aligned}
+  a &= L^{cc}_{2222}L^{cc}_{1212} \\
+  b &= 2\kappa L^{cc}_{2222}L^{cc}_{1212} \\
+  c &= \omega^2 \left[ \left ( L^{cc}_{1122} + L^{cc}_{2112}\right )^2 - \left ( L^{cc}_{1212} \right )^2 - L^{cc}_{1111}L^{cc}_{2222} + \frac{\kappa^2}{\omega^2}L^{cc}_{2222}L^{cc}_{1212}    \right ] \\
+  d &= \kappa \omega^2 \left[ \left ( L^{cc}_{1122} + L^{cc}_{2112}\right )^2 - \left ( L^{cc}_{1212} \right )^2 - L^{cc}_{1111}L^{cc}_{2222} \right ] \\
+  e &= \omega^2 \left( \kappa^2 L^{cc}_{1122}L^{cc}_{2112} + \omega^2 L^{cc}_{1111}L^{cc}_{1212} \right)   
+\end{aligned}
+\end{equation*}
+Plugging our form of the solution into the original system also gives the relationship for the coefficents $B_i$'s:
+\begin{equation}
+B_i = \frac {\omega^2 L^{cc}_{1111} - \kappa L^{cc}_{1212} \alpha_i - L^{cc}_{1212} \alpha_i^2 }
+            {\omega \left (L^{cc}_{2112} + L^{cc}_{1122} \right) \alpha_i + \omega \kappa L^{cc}_{2112}}
+\end{equation}
+Now the solution will be plugged into the four boundary conditions. The shear traction condition at $x_2 = L$ in equation \ref{eq:bcAtL}requires:
+\begin{equation}
+\sum_{i = 1}^4 \left[ \omega L^{cc}_{2112} A_iB_i e^{\alpha_iL} + L^{cc}_{1212} \alpha_i A_i e^{\alpha_i L} \right ] = 0
+\end{equation}
+The normal traction condition at $x_2 = L$ in equation \ref{eq:bcAtL} requires:
+\begin{equation}
+\sum_{i = 1}^4 \left [ L^{cc}_{2222} \alpha_i A_i B_i e^{\alpha_i L} - \omega L^{cc}_{1122} A_i e^{\alpha_i L} \right ] = 0  
+\end{equation}
+The shear traction condition at $x_2 = 0$ in equation \ref{eq:shearAt0} requires:
+\begin{equation}
+\sum_{i = 1}^4 \left [ L^{cc}_{1212} \alpha_iA_i + \omega L^{cc}_{2112} A_i B_i \right ] = 0
+\end{equation}
+And finally the constrained vertical displacements at $x_2 = 0$ in equation \ref{eq:dispAt0} requires:
+\begin{equation}
+\sum_{i=1}^4 A_i B_i = 0
+\end{equation}
+These four boundary condition equations give four homogeneous equations for the four unknown $A_i$'s. These can be collected and put into matrix form:
+\begin{equation}
+\mathbf{M} \mathbf{A} = \mathbf{0} 
+\end{equation}
+Where $\mathbf{A}$ is the vector of amplitude $A_i$'s:
+\begin{equation}
+\mathbf{A} = [ A_1, A_2, A_3, A_4 ]^T
+\end{equation}
+And $\mathbf{M}$ is the assembled matrix of coefficients from the boundary condition requirements. Then our first bifurcated solution occurs at the smallest $\lambda$ that satisfies:
+\begin{equation}
+\mathrm{det}(\mathbf{M}) = 0
+\end{equation}
 
 \end{document}
 
