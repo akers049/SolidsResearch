@@ -353,7 +353,7 @@ namespace NeoHookean_Newton
           {
             if (is_x2_comp[j])
             {
-              if ((fabs(x1_coord + support_points[j](0)) < 1e-12 ) && (fabs(x2_coord - support_points[j](1)) < 1e-12))
+              if (((fabs(x1_coord + support_points[j](0)) < 1e-12 ) && (fabs(x2_coord - support_points[j](1)) < 1e-12)) && j != i)
               {
                 constraints.add_line (i);
                 constraints.add_entry (i, j, 1);
@@ -495,21 +495,21 @@ namespace NeoHookean_Newton
       {
         // it is an x1 component
 
-        double v1 = 0.0;
+        std::complex<double> v1 = 0.0;
         for (int j = 0; j < 4; j++)
-          v1 += amplitudes_v1[j]*exp(charateristic_roots[j]*support_points[i](1));
+          v1 += amplitudes_v1[j]*exp(characteristic_roots[j]*support_points[i](1));
 
-        present_solution[i] += -epsilon*sin(critical_frequency*support_points[i](0))*v1;
+        present_solution[i] += -epsilon*sin(critical_frequency*support_points[i](0))* v1.real();
       }
       else
       {
         // it is an x2 component
 
-        double v2 = 0.0;
+        std::complex<double> v2 = 0.0;
         for (int j = 0; j < 4; j++)
-          v2 += amplitudes_v2[j]*exp(charateristic_roots[j]*support_points[i](1));
+          v2 += amplitudes_v2[j]*exp(characteristic_roots[j]*support_points[i](1));
 
-        present_solution[i] += epsilon*cos(critical_frequency*support_points[i](0))*v2;
+        present_solution[i] += epsilon*cos(critical_frequency*support_points[i](0))*v2.real();
 
       }
     }
@@ -956,7 +956,12 @@ namespace NeoHookean_Newton
         }
       }
     }
-
+/*
+    for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
+    {
+      present_solution[i] += eigenvectors[i][0];
+    }
+*/
     return positive_definite;
   }
 
@@ -1141,7 +1146,7 @@ namespace NeoHookean_Newton
 
     grid_dimensions.resize(2);
     domain_dimensions.resize(2);
-    charateristic_roots.resize(4);
+    characteristic_roots.resize(4);
     amplitudes_v1.resize(4);
     amplitudes_v2.resize(4);
 
@@ -1197,35 +1202,49 @@ namespace NeoHookean_Newton
         goto fileClose;
       }
 
+      double re1, re2, im1, im2;
+
       // read in the roots to the characteristic
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
       valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg",
-          &charateristic_roots[0], &charateristic_roots[1], &charateristic_roots[2], &charateristic_roots[3]);
+          &re1, &im1, &re2, &im2);
       if(valuesWritten != 4)
       {
         fileReadErrorFlag = true;
         goto fileClose;
       }
+      characteristic_roots[0] = std::complex<double>(re1, im1);
+      characteristic_roots[1] = std::conj(characteristic_roots[0]);
+      characteristic_roots[2] = std::complex<double>(re2, im2);
+      characteristic_roots[3] = std::conj(characteristic_roots[2]);
 
       // read in the v1 amplitudes
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
       valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg",
-          &amplitudes_v1[0], &amplitudes_v1[1], &amplitudes_v1[2], &amplitudes_v1[3]);
+          &re1, &im1, &re2, &im2);
       if(valuesWritten != 4)
       {
         fileReadErrorFlag = true;
         goto fileClose;
       }
+      amplitudes_v1[0] = std::complex<double>(re1, im1);
+      amplitudes_v1[1] = std::conj(amplitudes_v1[0]);
+      amplitudes_v1[2] = std::complex<double>(re2, im2);
+      amplitudes_v1[3] = std::conj(amplitudes_v1[2]);
 
       // read in the v2 amplitudes
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
       valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg",
-          &amplitudes_v2[0], &amplitudes_v2[1], &amplitudes_v2[2], &amplitudes_v2[3]);
+          &re1, &im1, &re2, &im2);
       if(valuesWritten != 4)
       {
         fileReadErrorFlag = true;
         goto fileClose;
       }
+      amplitudes_v2[0] = std::complex<double>(re1, im1);
+      amplitudes_v2[1] = std::conj(amplitudes_v2[0]);
+      amplitudes_v2[2] = std::complex<double>(re2, im2);
+      amplitudes_v2[3] = std::conj(amplitudes_v2[2]);
 
 
      fileClose:
@@ -1289,6 +1308,12 @@ namespace NeoHookean_Newton
               << std::endl << std::endl;
 
 
+/*
+    evaluation_point = present_solution;
+    get_system_eigenvalues(0.24, 222);
+    output_results(222);
+    return;
+*/
     // get the critical lambda value
     evaluation_point = present_solution;
     double lambda_c = bisect_find_lambda_critical(critical_lambda_analytical - 0.01, critical_lambda_analytical + 0.01, 1e-6, 50);
@@ -1299,16 +1324,17 @@ namespace NeoHookean_Newton
     newton_iterate();
     output_results (0);
 
-    double lambda_start = lambda_c - 1e-5;
+    double lambda_start = lambda_c + 1e-5;
     update_F0(lambda_start);
     newton_iterate();
     output_results (1);
 
-    add_first_bif_displacements(-0.01);
+    add_first_bif_displacements(-0.08567);
     output_results(999);
     newton_iterate();
     output_results (2);
 
+    get_system_eigenvalues(lambda_c + 1e-5, 1000);
 
     unsigned int load_steps = 3000;
     std::vector<double> lambda_values(load_steps);
@@ -1317,7 +1343,7 @@ namespace NeoHookean_Newton
    for(unsigned int i = 1; i < load_steps; i ++)
     {
 
-     double lambda = lambda_start - 5e-7*i;
+     double lambda = lambda_start + 5e-7*i;
       update_F0(lambda);
       newton_iterate();
 

@@ -139,9 +139,9 @@ namespace NeoHookean_Newton
     double kappa = 0.0;
     double critical_lambda_analytical = 0.0;
     double critical_frequency = 0.0;
-    std::vector<double> charateristic_roots;
-    std::vector<double> amplitudes_v1;
-    std::vector<double> amplitudes_v2;
+    std::vector<std::complex<double>> characteristic_roots;
+    std::vector<std::complex<double>> amplitudes_v1;
+    std::vector<std::complex<double>> amplitudes_v2;
 
     std::vector<int> matched_dofs;
 
