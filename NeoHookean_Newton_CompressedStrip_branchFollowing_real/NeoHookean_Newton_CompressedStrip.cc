@@ -226,6 +226,7 @@ namespace NeoHookean_Newton
 
     newton_update.reinit(dof_handler.n_dofs());
     system_rhs.reinit (dof_handler.n_dofs());
+    drhs_dlambda.reinit (dof_handler.n_dofs());
 
     DynamicSparsityPattern dsp(dof_handler.n_dofs(), dof_handler.n_dofs());
     DoFTools::make_sparsity_pattern(dof_handler,
@@ -546,9 +547,6 @@ namespace NeoHookean_Newton
     std::vector<double>     nu_values (n_q_points);
     std::vector<double>     mu_values (n_q_points);
 
-    MuFunction<dim>  mu(kappa);
-    NuFunction<dim>  nu;
-
     typename DoFHandler<dim>::active_cell_iterator cell = dof_handler.begin_active(),
                                                    endc = dof_handler.end();
     for (; cell!=endc; ++cell)
@@ -560,7 +558,7 @@ namespace NeoHookean_Newton
       fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
 
       nu.value_list (fe_values.get_quadrature_points(), nu_values);
-      mu.value_list     (fe_values.get_quadrature_points(), mu_values);
+      mu->value_list     (fe_values.get_quadrature_points(), mu_values);
 
 
       for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
@@ -648,9 +646,6 @@ namespace NeoHookean_Newton
     std::vector<double>     nu_values (n_q_points);
     std::vector<double>     mu_values (n_q_points);
 
-    MuFunction<dim> mu(kappa);
-    NuFunction<dim> nu;
-
     std::vector<Tensor<1, dim> > rhs_values (n_q_points);
 
     typename DoFHandler<dim>::active_cell_iterator cell = dof_handler.begin_active(),
@@ -664,7 +659,7 @@ namespace NeoHookean_Newton
       fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
 
       nu.value_list (fe_values.get_quadrature_points(), nu_values);
-      mu.value_list     (fe_values.get_quadrature_points(), mu_values);
+      mu->value_list     (fe_values.get_quadrature_points(), mu_values);
       right_hand_side (fe_values.get_quadrature_points(), rhs_values);
 
 
@@ -727,7 +722,7 @@ namespace NeoHookean_Newton
   }
 
   template <int dim>
-  void ElasticProblem<dim>::assemble_system_energy_and_congugate_lambda(double lambda)
+  void ElasticProblem<dim>::assemble_system_energy_and_congugate_lambda(double lambda_eval)
   {
 
     system_energy = 0.0;
@@ -752,9 +747,6 @@ namespace NeoHookean_Newton
     std::vector<double>     nu_values (n_q_points);
     std::vector<double>     mu_values (n_q_points);
 
-    NuFunction<dim> nu;
-    MuFunction<dim> mu(kappa);
-
     std::vector<Tensor<1, dim> > rhs_values (n_q_points);
 
     typename DoFHandler<dim>::active_cell_iterator cell = dof_handler.begin_active(),
@@ -768,7 +760,7 @@ namespace NeoHookean_Newton
       fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
 
       nu.value_list (fe_values.get_quadrature_points(), nu_values);
-      mu.value_list     (fe_values.get_quadrature_points(), mu_values);
+      mu->value_list     (fe_values.get_quadrature_points(), mu_values);
 
 
       double dlambda1_dlambda, dlambda2_dlambda, a_nu;
@@ -785,7 +777,7 @@ namespace NeoHookean_Newton
 
         a_nu = (2.0*nu_values[q_point]/(1.0 - nu_values[q_point]));
         dlambda2_dlambda = ( a_nu + sqrt(4 + a_nu + a_nu*a_nu))
-                            / ((2 + 2*a_nu)*(1.0 - lambda)*(1.0 - lambda));
+                            / ((2 + 2*a_nu)*(1.0 - lambda_eval)*(1.0 - lambda_eval));
 
         congugate_lambda += (dlambda1_dlambda*dW_dF[0][0] + dlambda2_dlambda*dW_dF[1][1])
                              *fe_values.JxW(q_point);
@@ -795,6 +787,86 @@ namespace NeoHookean_Newton
       }
     }
 
+  }
+
+  template <int dim>
+  void ElasticProblem<dim>::assemble_drhs_dlambda(double lambda_eval)
+  {
+
+    drhs_dlambda = 0.0;
+
+    QGauss<dim>  quadrature_formula(2);
+
+    FEValues<dim> fe_values (fe, quadrature_formula,
+                             update_values   | update_gradients |
+                             update_quadrature_points | update_JxW_values);
+
+    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
+    const unsigned int   n_q_points    = quadrature_formula.size();
+
+    Vector<double>       cell_rhs (dofs_per_cell);
+
+    std::vector<std::vector<Tensor<1,dim> > > old_solution_gradients(n_q_points,
+                                                std::vector<Tensor<1,dim>>(dim));
+
+    std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
+
+    std::vector<double>     nu_values (n_q_points);
+    std::vector<double>     mu_values (n_q_points);
+
+    std::vector<Tensor<1, dim> > rhs_values (n_q_points);
+
+    typename DoFHandler<dim>::active_cell_iterator cell = dof_handler.begin_active(),
+                                                   endc = dof_handler.end();
+    for (; cell!=endc; ++cell)
+    {
+      cell_rhs = 0;
+
+      fe_values.reinit (cell);
+
+      fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
+
+      nu.value_list (fe_values.get_quadrature_points(), nu_values);
+      mu->value_list     (fe_values.get_quadrature_points(), mu_values);
+
+
+      double dlambda1_dlambda, dlambda2_dlambda, a_nu;
+      for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+      {
+        Tensor<2,dim> F = get_deformation_gradient(old_solution_gradients[q_point]);
+        Tensor<2, dim> F_inv = invert(F);
+        double II_F = determinant(F);
+
+        Tensor<4,dim> d2W_dFdF = get_incremental_moduli_tensor(nu_values[q_point],
+                                           mu_values[q_point], F_inv, II_F);
+
+        // construct the dF_dlambda
+        dlambda1_dlambda = -1.0;
+        a_nu = (2.0*nu_values[q_point]/(1.0 - nu_values[q_point]));
+        dlambda2_dlambda = ( a_nu + sqrt(4 + a_nu + a_nu*a_nu))
+                            / ((2 + 2*a_nu)*(1.0 - lambda_eval)*(1.0 - lambda_eval));
+
+        Tensor<2,dim> dW_dF_dlambda;
+        for (unsigned int i = 0 ; i < dim; i ++)
+          for (unsigned int j = 0 ; j < dim; j ++)
+            for (unsigned int k = 0 ; k < dim; k ++)
+              dW_dF_dlambda[i][j] += d2W_dFdF[i][j][k][k]*(k == 0 ? dlambda1_dlambda : dlambda2_dlambda);
+
+
+
+        for (unsigned int n = 0; n < dofs_per_cell; ++n)
+        {
+          const unsigned int component_n = fe.system_to_component_index(n).first;
+
+          for(unsigned int j = 0; j<dim; ++j)
+          {
+            drhs_dlambda(n) += dW_dF_dlambda[component_n][j]*fe_values.shape_grad(n, q_point)[j]*fe_values.JxW(q_point);
+          }
+
+        }
+
+      }
+    }
   }
 
   template <int dim>
@@ -853,6 +925,139 @@ namespace NeoHookean_Newton
     // output iterations for convergance.
     std::cout << "    Converging Iterations : " << iteration << "\n";
 
+  }
+
+  template<int dim>
+  void ElasticProblem<dim>::branch_following_PACA_iterate(Vector<double> previousSolution, double previousLambda,
+                                                          Vector<double> solVectorGuess,
+                                                          double lambdaGuess, double ds)
+  {
+    // The setup stuff, may need to take  in more inputs. But for now we will do with this
+
+    double current_residual = 0.0;
+    double rhsBottom = 0.0;
+    double systemMatCorner = 0.0;
+    Vector<double> solutionDiff;
+    unsigned int iteration = 0;
+
+    present_lambda = lambdaGuess;
+
+    // get the dofs that we will apply dirichlet condition to
+    std::vector<bool> boundary_2_dof_x2 (dof_handler.n_dofs(), false);
+
+    std::set< types::boundary_id > boundary_id_2;
+    boundary_id_2.insert(2);
+
+
+    std::vector<bool> x2_components = {false, true};
+    ComponentMask x2_mask(x2_components);
+
+    DoFTools::extract_boundary_dofs(dof_handler,
+                                       x2_mask,
+                                       boundary_2_dof_x2,
+                                       boundary_id_2);
+
+    // Starts by getting the residual in the initial guess.
+    evaluation_point = solVectorGuess;
+    update_F0(present_lambda);
+
+    assemble_system_rhs();
+    apply_boundaries_to_rhs(system_rhs, boundary_2_dof_x2);
+
+    double lambdaDiff = present_lambda - previousLambda;
+    solutionDiff = solVectorGuess;
+    solutionDiff -= previousSolution;
+
+    current_residual = sqrt( system_rhs.norm_sqr() + 0.5*( solutionDiff.norm_sqr() +
+                                                           lambdaDiff*lambdaDiff - ds*ds) );
+
+
+    while ((current_residual > tol) &&
+        (iteration < maxIter))
+    {
+
+      update_F0(present_lambda);
+
+      // Assemble rhs
+      assemble_system_rhs();
+      apply_boundaries_to_rhs(system_rhs, boundary_2_dof_x2);
+
+      // Assemble the stiffness matrix
+      assemble_system_matrix();
+
+      // Assemble the drhs_dlambda
+      assemble_drhs_dlambda(present_lambda);
+
+      // Get the solution diff (bottom boarder of system mat)
+      solutionDiff = present_solution;
+      solutionDiff -= previousSolution;
+
+      // get the bottom corner of system mat
+      systemMatCorner = present_lambda - previousLambda;
+
+      // get bottom element of the rhs
+
+      lambdaDiff = present_lambda - previousLambda;
+      rhsBottom = 0.5*( solutionDiff.norm_sqr() + lambdaDiff*lambdaDiff - ds*ds);
+
+      // Solve it somehow
+
+
+      line_search_and_add_step_length_PACA(current_residual, boundary_2_dof_x2, previousSolution, previousLambda, ds);
+
+      evaluation_point = present_solution;
+
+      solutionDiff = solVectorGuess;
+      solutionDiff -= previousSolution;
+
+      current_residual = sqrt( system_rhs.norm_sqr() + 0.5*( solutionDiff.norm_sqr() +
+                                                              lambdaDiff*lambdaDiff - ds*ds) );
+
+      iteration ++;
+
+    }
+  }
+
+  template<int dim>
+  void ElasticProblem<dim>::line_search_and_add_step_length_PACA(double last_residual, std::vector<bool> homogenous_dirichlet_dofs,
+                                                                 Vector<double> previousSolution, double previousLambda, double ds)
+  {
+   /* this function makes sure that the step sizes we are taking with
+    * the newton iteration are making the residual get smaller.
+    * Something very similar is used in the dealii step 57?. for now
+    * it doesn't do much but we might need to give it more capabilites in the future.
+    */
+
+    double current_residual;
+    double lambda_eval;
+    double lambdaDiff;
+    Vector<double> solutionDiff;
+
+    for(double alpha = 1.0; alpha > 1e-5; alpha *=0.5)
+    {
+      evaluation_point = present_solution;
+      evaluation_point.add(alpha, newton_update);
+
+      lambda_eval = present_lambda + alpha*lambda_update;
+
+      update_F0(lambda_eval);
+      assemble_system_rhs();
+      apply_boundaries_to_rhs(system_rhs, homogenous_dirichlet_dofs);
+
+
+      solutionDiff = present_solution;
+      solutionDiff -= previousSolution;
+      lambdaDiff = lambda_eval - previousLambda;
+
+      current_residual = sqrt( system_rhs.norm_sqr() + 0.5*( solutionDiff.norm_sqr() +
+                                                             lambdaDiff*lambdaDiff - ds*ds) );
+
+      if(current_residual < last_residual)
+        break;
+
+    }
+    present_solution = evaluation_point;
+    present_lambda = lambda_eval;
   }
 
   template<int dim>
@@ -1182,6 +1387,7 @@ namespace NeoHookean_Newton
         fileReadErrorFlag = true;
         goto fileClose;
       }
+      mu = new MuFunction<dim>(kappa);
 
       // read in critical lambda
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);

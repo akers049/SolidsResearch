@@ -57,6 +57,60 @@ namespace NeoHookean_Newton
                        Class Declarations
   ****************************************************************/
 
+  /****  NuFunction *****
+    * This is a dealii Function class for the nu function.
+    */
+
+   template <int dim>
+   class NuFunction : public Function<dim>
+   {
+
+   public:
+     NuFunction () : Function<dim>() {}
+     virtual ~NuFunction (){}
+
+     // const double PI = std::atan(1.0)*4;
+
+     virtual double value (const Point<dim> &p,
+                           const unsigned int  component = 0) const;
+
+     virtual void value_list(const std::vector< Point< dim > > &  points,
+                              std::vector< double > &   values,
+                              const unsigned int  component = 0 )   const;
+
+   };
+
+
+   /****  NuFunction *****
+    * This is a dealii Function class for the mu function.
+    */
+
+   template <int dim>
+   class MuFunction : public Function<dim>
+   {
+
+   public:
+     MuFunction (double expontential_growth_param) : Function<dim>()
+     {
+       kappa = expontential_growth_param;
+     }
+     virtual ~MuFunction (){}
+
+     // const double PI = std::atan(1.0)*4;
+
+     virtual double value (const Point<dim> &p,
+                           const unsigned int  component = 0) const;
+
+     virtual void value_list(const std::vector< Point< dim > > &  points,
+                              std::vector< double > &   values,
+                              const unsigned int  component = 0 )   const;
+
+     double kappa;
+     const double mu0 = 1.0;
+
+   };
+
+
   /****  ElasticProblem  *****
    * This is the primary class used, with all the dealii stuff
    */
@@ -91,9 +145,15 @@ namespace NeoHookean_Newton
     void assemble_system_matrix();
     void assemble_system_rhs();
     void apply_boundaries_to_rhs(Vector<double> rhs, std::vector<bool> homogenous_dirichlet_dofs);
-    void assemble_system_energy_and_congugate_lambda(double lambda);
+    void assemble_system_energy_and_congugate_lambda(double lambda_eval);
+    void assemble_drhs_dlambda(double lambda_eval);
     void newton_iterate();
+    void branch_following_PACA_iterate(Vector<double> previousSolution, double preivousLambda,
+                                        Vector<double> solVectorGuess,
+                                        double lambdaGuess, double ds);
     void line_search_and_add_step_length(double current_residual, std::vector<bool> homogenous_dirichlet_dofs);
+    void line_search_and_add_step_length_PACA(double last_residual, std::vector<bool> homogenous_dirichlet_dofs,
+                                              Vector<double> previousSolution, double previousLambda, double ds);
     void solve();
     bool get_system_eigenvalues(double lambda_eval, const int cycle);
     double bisect_find_lambda_critical(double lowerBound, double upperBound,
@@ -119,10 +179,13 @@ namespace NeoHookean_Newton
     SparsityPattern      sparsity_pattern;
     SparseMatrix<double> system_matrix;
 
+    double               present_lambda;
+    double               lambda_update;
     Vector<double>       present_solution;
     Vector<double>       evaluation_point;
     Vector<double>       newton_update;
     Vector<double>       system_rhs;
+    Vector<double>       drhs_dlambda;
 
     Vector<double>       system_eigenvalues;
 
@@ -143,64 +206,12 @@ namespace NeoHookean_Newton
     std::vector<double> amplitudes_v1;
     std::vector<double> amplitudes_v2;
 
+    NuFunction<dim> nu;
+    MuFunction<dim> *mu = NULL;
+
     std::vector<int> matched_dofs;
 
   };
-
-
-  /****  NuFunction *****
-   * This is a dealii Function class for the nu function.
-   */
-
-  template <int dim>
-  class NuFunction : public Function<dim>
-  {
-
-  public:
-    NuFunction () : Function<dim>() {}
-    virtual ~NuFunction (){}
-
-    // const double PI = std::atan(1.0)*4;
-
-    virtual double value (const Point<dim> &p,
-                          const unsigned int  component = 0) const;
-
-    virtual void value_list(const std::vector< Point< dim > > &  points,
-                             std::vector< double > &   values,
-                             const unsigned int  component = 0 )   const;
-
-  };
-
-
-  /****  NuFunction *****
-   * This is a dealii Function class for the mu function.
-   */
-
-  template <int dim>
-  class MuFunction : public Function<dim>
-  {
-
-  public:
-    MuFunction (double expontential_growth_param) : Function<dim>()
-    {
-      kappa = expontential_growth_param;
-    }
-    virtual ~MuFunction (){}
-
-    // const double PI = std::atan(1.0)*4;
-
-    virtual double value (const Point<dim> &p,
-                          const unsigned int  component = 0) const;
-
-    virtual void value_list(const std::vector< Point< dim > > &  points,
-                             std::vector< double > &   values,
-                             const unsigned int  component = 0 )   const;
-
-    double kappa;
-    const double mu0 = 1.0;
-
-  };
-
 }
 
 
