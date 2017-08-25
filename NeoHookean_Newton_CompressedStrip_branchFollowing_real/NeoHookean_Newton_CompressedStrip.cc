@@ -247,7 +247,7 @@ namespace NeoHookean_Newton
     DoFTools::make_hanging_node_constraints (dof_handler, constraints);
 
 
-    // periodic in x1 and x2 for the 0 and 1 face (x1 faces)
+    // periodic in x1 on 0 and 1 face (x1 faces) will do the x2 direction with x2 symmetry...
     DoFTools::make_periodicity_constraints<DoFHandler<dim>>(dof_handler, 0, 1, 0, constraints);
 
     // now do constraints that the average x1 displacement on boundary 2 is zero
@@ -323,12 +323,12 @@ namespace NeoHookean_Newton
                                        boundary_2_dof_x2,
                                        boundary_id_2);
 
-    // and the vector if it is a boundary 0 or 1 x2 dof. These are already constrained to each other.
+   /* // and the vector if it is a boundary 0 or 1 x2 dof. These are already constrained to each other.
     std::vector<bool> boundary_01_dof_x2 (number_dofs, false);
     DoFTools::extract_boundary_dofs (dof_handler,
                                      x2_mask,
                                      boundary_01_dof_x2,
-                                     boundary_id_01);
+                                     boundary_id_01);*/
 
 
     matched_dofs.resize(number_dofs, -1);
@@ -336,7 +336,7 @@ namespace NeoHookean_Newton
     {
       if (is_x2_comp[i])
       {
-        if (boundary_2_dof_x2[i] || boundary_01_dof_x2[i] || (matched_dofs[i] != -1))
+        if (boundary_2_dof_x2[i] || (matched_dofs[i] != -1))
         {
           // these dofs have already been constrained!
           continue;
@@ -929,18 +929,13 @@ namespace NeoHookean_Newton
 
   template<int dim>
   void ElasticProblem<dim>::branch_following_PACA_iterate(Vector<double> previousSolution, double previousLambda,
-                                                          Vector<double> solVectorGuess,
-                                                          double lambdaGuess, double ds)
+                                                          Vector<double> solVectorDir,
+                                                          double lambdaDir, double ds)
   {
     // The setup stuff, may need to take  in more inputs. But for now we will do with this
 
     double current_residual = 0.0;
-    double rhsBottom = 0.0;
-    double systemMatCorner = 0.0;
-    Vector<double> solutionDiff;
     unsigned int iteration = 0;
-
-    present_lambda = lambdaGuess;
 
     // get the dofs that we will apply dirichlet condition to
     std::vector<bool> boundary_2_dof_x2 (dof_handler.n_dofs(), false);
@@ -958,18 +953,22 @@ namespace NeoHookean_Newton
                                        boundary_id_2);
 
     // Starts by getting the residual in the initial guess.
-    evaluation_point = solVectorGuess;
+    present_lambda += lambdaDir*ds;
+
+    present_solution.add(ds, solVectorDir);
+    evaluation_point = present_solution;
+
     update_F0(present_lambda);
 
     assemble_system_rhs();
     apply_boundaries_to_rhs(system_rhs, boundary_2_dof_x2);
 
-    double lambdaDiff = present_lambda - previousLambda;
-    solutionDiff = solVectorGuess;
-    solutionDiff -= previousSolution;
+    lambda_diff = present_lambda - previousLambda;
+    solution_diff = evaluation_point;
+    solution_diff -= previousSolution;
 
-    current_residual = sqrt( system_rhs.norm_sqr() + 0.5*( solutionDiff.norm_sqr() +
-                                                           lambdaDiff*lambdaDiff - ds*ds) );
+    current_residual = sqrt( system_rhs.norm_sqr() + 0.5*( solution_diff.norm_sqr() +
+                                                           lambda_diff*lambda_diff - ds*ds) );
 
 
     while ((current_residual > tol) &&
@@ -989,33 +988,34 @@ namespace NeoHookean_Newton
       assemble_drhs_dlambda(present_lambda);
 
       // Get the solution diff (bottom boarder of system mat)
-      solutionDiff = present_solution;
-      solutionDiff -= previousSolution;
+      solution_diff = present_solution;
+      solution_diff -= previousSolution;
 
       // get the bottom corner of system mat
-      systemMatCorner = present_lambda - previousLambda;
+      lambda_diff = present_lambda - previousLambda;
 
       // get bottom element of the rhs
-
-      lambdaDiff = present_lambda - previousLambda;
-      rhsBottom = 0.5*( solutionDiff.norm_sqr() + lambdaDiff*lambdaDiff - ds*ds);
+      rhs_bottom = -0.5*( solution_diff.norm_sqr() + lambda_diff*lambda_diff - ds*ds);
 
       // Solve it somehow
+      solve_boarder_matrix_system();
 
 
       line_search_and_add_step_length_PACA(current_residual, boundary_2_dof_x2, previousSolution, previousLambda, ds);
 
       evaluation_point = present_solution;
 
-      solutionDiff = solVectorGuess;
-      solutionDiff -= previousSolution;
+      solution_diff = evaluation_point;
+      solution_diff -= previousSolution;
 
-      current_residual = sqrt( system_rhs.norm_sqr() + 0.5*( solutionDiff.norm_sqr() +
-                                                              lambdaDiff*lambdaDiff - ds*ds) );
+      current_residual = sqrt( system_rhs.norm_sqr() + 0.5*( solution_diff.norm_sqr() +
+                                                              lambda_diff*lambda_diff - ds*ds) );
 
       iteration ++;
 
     }
+    // output iterations for convergance.
+    std::cout << "    Converging Iterations : " << iteration << "\n";
   }
 
   template<int dim>
@@ -1028,9 +1028,9 @@ namespace NeoHookean_Newton
     * it doesn't do much but we might need to give it more capabilites in the future.
     */
 
-    double current_residual;
-    double lambda_eval;
-    double lambdaDiff;
+    double current_residual = 0.0;
+    double lambda_eval = 0.0;
+    double lambdaDiff = 0.0;
     Vector<double> solutionDiff;
 
     for(double alpha = 1.0; alpha > 1e-5; alpha *=0.5)
@@ -1108,8 +1108,63 @@ namespace NeoHookean_Newton
 
   }
 
+  template <int dim>
+  void ElasticProblem<dim>::solve_boarder_matrix_system()
+  {
+
+    // steps to solving board system as described in
+    // Govaerts's Numerical methods for bifurcation of dynamical equilibria 3.6.2
+
+    SparseDirectUMFPACK  A_direct;
+    A_direct.initialize(system_matrix);
+
+    Vector<double> omega;
+    Vector<double> v;
+    Vector<double> excee;
+    Vector<double> f1;
+    double delta_star, delta, y1, g1, y2;
+
+    // step 1
+    A_direct.vmult(omega, solution_diff);
+
+    // step 2
+    delta_star = lambda_diff - omega*drhs_dlambda;
+
+    // step 3
+    A_direct.vmult(v, drhs_dlambda);
+
+    // step 4
+    delta = lambda_diff - solution_diff*v;
+
+    // step 5
+    y1 =(rhs_bottom - omega*system_rhs)/delta_star;
+
+    // step 6
+    f1 = system_rhs;
+    f1.add(-y1, drhs_dlambda);
+
+    // step 7
+    g1 = rhs_bottom - lambda_diff*y1;
+
+    // step 8
+    A_direct.vmult(excee, f1);
+
+    // step 9
+    y2 = (g1 - solution_diff*excee)/delta;
+
+    // step 10
+    newton_update = excee;
+    newton_update.add(-y2, v);
+
+    // step 11
+    lambda_update = y1 + y2;
+
+    constraints.distribute (newton_update);
+  }
+
   template<int dim>
-  bool ElasticProblem<dim>::get_system_eigenvalues(double lambda_eval, const int cycle)
+  bool ElasticProblem<dim>::get_system_eigenvalues(double lambda_eval, const int cycle,
+                                                   bool writeEigVect)
   {
 
 
@@ -1147,7 +1202,16 @@ namespace NeoHookean_Newton
         outputFile << std::setprecision(15) << nextEigenVal << std::endl;
 
         if (nextEigenVal < 0.0)
+        {
           positive_definite = false;
+
+          if (writeEigVect)
+          {
+            unstable_eigenvector.reinit(dof_handler.n_dofs());
+            for (unsigned int j = 0; j < dof_handler.n_dofs(); j++)
+              unstable_eigenvector[j] = eigenvectors[j][i];
+          }
+        }
 
       }
 
@@ -1161,6 +1225,12 @@ namespace NeoHookean_Newton
         if (eigenvalues[i] < 0.0)
         {
           positive_definite = false;
+          if (writeEigVect)
+          {
+            unstable_eigenvector.reinit(dof_handler.n_dofs());
+            for (unsigned int j = 0; j < dof_handler.n_dofs(); j++)
+              unstable_eigenvector[j] = eigenvectors[j][i];
+          }
           break;
         }
       }
@@ -1509,42 +1579,77 @@ namespace NeoHookean_Newton
     newton_iterate();
     output_results (0);
 
-    double lambda_start = lambda_c - 1e-5;
+    double lambda_start = lambda_c + 3e-6;
     update_F0(lambda_start);
     newton_iterate();
     output_results (1);
 
-    add_first_bif_displacements(-0.01);
-    output_results(999);
-    newton_iterate();
+    get_system_eigenvalues(lambda_start, 222, true);
+
+    // Ok, so the eigenvector is actually kinda messed up because of the symmetry. So
+    // it is only filled with half of the x2 displacements ( the other half are zero). So
+    // this is just filling the, in.
+    std::vector<Point<dim>> support_points(dof_handler.n_dofs());
+    MappingQ1<dim> mapping;
+    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
+    for (unsigned int i =0 ; i< dof_handler.n_dofs(); i++)
+    {
+      if((matched_dofs[i] != -1 ) && (support_points[i](0) > 0.0))
+        unstable_eigenvector[matched_dofs[i]] = unstable_eigenvector[i];
+
+    }
+    unstable_eigenvector *= (1.0/unstable_eigenvector.l2_norm());
+
+
+
+
+    Vector<double> previous_solution = present_solution;
+    double previous_lambda = lambda_start;
+
+    present_lambda = lambda_start - 1e-6;
+    double ds = 0.1;
+    branch_following_PACA_iterate(present_solution, lambda_start, unstable_eigenvector, 0.0, ds);
     output_results (2);
 
+    // define variables for the tangent to next start point.
+    Vector<double> solution_tangent;
+    double lambda_tangent;
+    double scalingVal;
 
-    unsigned int load_steps = 3000;
+
+
+    unsigned int load_steps = 10;
     std::vector<double> lambda_values(load_steps);
     std::vector<double> congugate_lambda_values(load_steps);
     std::vector<double> energy_values(load_steps);
-   for(unsigned int i = 1; i < load_steps; i ++)
+    for(unsigned int i = 1; i < load_steps; i ++)
     {
 
-     double lambda = lambda_start - 5e-7*i;
-      update_F0(lambda);
-      newton_iterate();
+     // get the differences between past and this solution
+     solution_tangent = present_solution;
+     solution_tangent -= previous_solution;
+     lambda_tangent = present_lambda - previous_lambda;
 
+     // now scale to length 1.0
+     scalingVal = 1.0/sqrt(solution_tangent.norm_sqr() + lambda_tangent*lambda_tangent);
+     solution_tangent *= scalingVal;
+     lambda_tangent *= scalingVal;
 
-    /*  // get energy and congugate lambda value and save them.
-            assemble_system_energy_and_congugate_lambda(lambda);
-            lambda_values[i] = lambda;
-            congugate_lambda_values[i] = congugate_lambda;
-            energy_values[i] = system_energy;*/
+     previous_lambda = present_lambda;
+     previous_solution = present_solution;
 
-      if ((i)%50 == 0)
-      {
-       output_results((i)/50 + 2);
-       get_system_eigenvalues(lambda, (i)/50);
-      }
+     branch_following_PACA_iterate(present_solution, present_lambda, solution_tangent, lambda_tangent, ds);
+
+     output_results(i + 2);
+
+     // get energy and congugate lambda value and save them.
+     assemble_system_energy_and_congugate_lambda(present_lambda);
+     lambda_values[i] = present_lambda;
+     congugate_lambda_values[i] = congugate_lambda;
+     energy_values[i] = system_energy;
+
     }
-   // output_load_info(lambda_values, energy_values, congugate_lambda_values);
+    output_load_info(lambda_values, energy_values, congugate_lambda_values);
 
     /*
     update_F0(critical_lambda + 0.000002);

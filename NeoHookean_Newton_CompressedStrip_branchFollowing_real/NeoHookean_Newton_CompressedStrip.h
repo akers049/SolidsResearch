@@ -155,7 +155,9 @@ namespace NeoHookean_Newton
     void line_search_and_add_step_length_PACA(double last_residual, std::vector<bool> homogenous_dirichlet_dofs,
                                               Vector<double> previousSolution, double previousLambda, double ds);
     void solve();
-    bool get_system_eigenvalues(double lambda_eval, const int cycle);
+    void solve_boarder_matrix_system();
+    bool get_system_eigenvalues(double lambda_eval, const int cycle,
+                                bool writeEigVect = false);
     double bisect_find_lambda_critical(double lowerBound, double upperBound,
                                        double tol, unsigned int maxIter);
     void output_results(const unsigned int cycle) const;
@@ -179,15 +181,18 @@ namespace NeoHookean_Newton
     SparsityPattern      sparsity_pattern;
     SparseMatrix<double> system_matrix;
 
-    double               present_lambda;
-    double               lambda_update;
+    double               present_lambda = 0.0;
+    double               lambda_update= 0.0;
     Vector<double>       present_solution;
     Vector<double>       evaluation_point;
     Vector<double>       newton_update;
     Vector<double>       system_rhs;
     Vector<double>       drhs_dlambda;
+    Vector<double>       solution_diff;
+    double               lambda_diff = 0.0;
+    double               rhs_bottom = 0.0;
 
-    Vector<double>       system_eigenvalues;
+    Vector<double>       unstable_eigenvector;
 
     double               system_energy = 0.0;
     double               congugate_lambda = 0.0;
