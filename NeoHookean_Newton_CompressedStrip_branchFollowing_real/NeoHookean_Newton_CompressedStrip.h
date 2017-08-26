@@ -170,6 +170,8 @@ namespace NeoHookean_Newton
     void getNextDataLine( FILE* const filePtr, char* nextLinePtr,
                             int const maxSize, int* const endOfFileFlag);
 
+    void compute_and_compare_drhs_dlambda(double epsilon, double lambda);
+
 
     Triangulation<dim>   triangulation;
     DoFHandler<dim>      dof_handler;
