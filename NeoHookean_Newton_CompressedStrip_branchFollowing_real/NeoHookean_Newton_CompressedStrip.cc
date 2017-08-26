@@ -190,6 +190,7 @@ namespace NeoHookean_Newton
   ElasticProblem<dim>::~ElasticProblem ()
   {
     dof_handler.clear ();
+    delete mu;
   }
 
 
@@ -690,34 +691,19 @@ namespace NeoHookean_Newton
       for (unsigned int n=0; n<dofs_per_cell; ++n)
         system_rhs(local_dof_indices[n]) += cell_rhs(n);
 
-      }
+    }
 
     constraints.condense (system_rhs);
 
-    std::map<types::global_dof_index,double> boundary_values;
-
-    std::vector<bool> side2_components = {false, true};
-    ComponentMask side2_mask(side2_components);
-
-    VectorTools::interpolate_boundary_values (dof_handler,
-                                              2,
-                                              ZeroFunction<dim>(dim),
-                                              boundary_values,
-                                              side2_mask);
-
-    MatrixTools::apply_boundary_values (boundary_values,
-                                        system_matrix,
-                                        newton_update,
-                                        system_rhs);
   }
 
   template <int dim>
-  void ElasticProblem<dim>::apply_boundaries_to_rhs(Vector<double> rhs, std::vector<bool> homogenous_dirichlet_dofs)
+  void ElasticProblem<dim>::apply_boundaries_to_rhs(Vector<double> *rhs, std::vector<bool> homogenous_dirichlet_dofs)
   {
     for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
     {
       if (homogenous_dirichlet_dofs[i] == true)
-        rhs[i] = 0.0;
+        (*rhs)[i] = 0.0;
     }
   }
 
@@ -737,7 +723,6 @@ namespace NeoHookean_Newton
     const unsigned int   dofs_per_cell = fe.dofs_per_cell;
     const unsigned int   n_q_points    = quadrature_formula.size();
 
-    Vector<double>       cell_rhs (dofs_per_cell);
 
     std::vector<std::vector<Tensor<1,dim> > > old_solution_gradients(n_q_points,
                                                 std::vector<Tensor<1,dim>>(dim));
@@ -753,8 +738,6 @@ namespace NeoHookean_Newton
                                                    endc = dof_handler.end();
     for (; cell!=endc; ++cell)
     {
-      cell_rhs = 0;
-
       fe_values.reinit (cell);
 
       fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
@@ -804,7 +787,7 @@ namespace NeoHookean_Newton
     const unsigned int   dofs_per_cell = fe.dofs_per_cell;
     const unsigned int   n_q_points    = quadrature_formula.size();
 
-    Vector<double>       cell_rhs (dofs_per_cell);
+    Vector<double>       cell_drhs_dlambda (dofs_per_cell);
 
     std::vector<std::vector<Tensor<1,dim> > > old_solution_gradients(n_q_points,
                                                 std::vector<Tensor<1,dim>>(dim));
@@ -814,14 +797,11 @@ namespace NeoHookean_Newton
     std::vector<double>     nu_values (n_q_points);
     std::vector<double>     mu_values (n_q_points);
 
-    std::vector<Tensor<1, dim> > rhs_values (n_q_points);
-
     typename DoFHandler<dim>::active_cell_iterator cell = dof_handler.begin_active(),
                                                    endc = dof_handler.end();
     for (; cell!=endc; ++cell)
     {
-      cell_rhs = 0;
-
+      cell_drhs_dlambda = 0.0;
       fe_values.reinit (cell);
 
       fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
@@ -860,13 +840,18 @@ namespace NeoHookean_Newton
 
           for(unsigned int j = 0; j<dim; ++j)
           {
-            drhs_dlambda(n) += dW_dF_dlambda[component_n][j]*fe_values.shape_grad(n, q_point)[j]*fe_values.JxW(q_point);
+            cell_drhs_dlambda(n) += dW_dF_dlambda[component_n][j]*fe_values.shape_grad(n, q_point)[j]*fe_values.JxW(q_point);
           }
-
         }
-
       }
+
+      cell->get_dof_indices (local_dof_indices);
+
+      for (unsigned int n=0; n<dofs_per_cell; ++n)
+        drhs_dlambda(local_dof_indices[n]) += cell_drhs_dlambda(n);
     }
+
+    constraints.condense (drhs_dlambda);
   }
 
   template <int dim>
@@ -898,7 +883,7 @@ namespace NeoHookean_Newton
     evaluation_point = present_solution;
 
     assemble_system_rhs();
-    apply_boundaries_to_rhs(system_rhs, boundary_2_dof_x2);
+    apply_boundaries_to_rhs(&system_rhs, boundary_2_dof_x2);
 
     current_residual = system_rhs.l2_norm();
 
@@ -961,16 +946,17 @@ namespace NeoHookean_Newton
     update_F0(present_lambda);
 
     assemble_system_rhs();
-    apply_boundaries_to_rhs(system_rhs, boundary_2_dof_x2);
+    apply_boundaries_to_rhs(&system_rhs, boundary_2_dof_x2);
 
     lambda_diff = present_lambda - previousLambda;
     solution_diff = evaluation_point;
     solution_diff -= previousSolution;
 
-    current_residual = sqrt( system_rhs.norm_sqr() + 0.5*( solution_diff.norm_sqr() +
-                                                           lambda_diff*lambda_diff - ds*ds) );
+    current_residual = sqrt( system_rhs.norm_sqr() +
+                            0.5*( solution_diff.norm_sqr() + lambda_diff*lambda_diff - ds*ds));
 
 
+    std::cout << "Starting Residual : " << current_residual << std::endl;
     while ((current_residual > tol) &&
         (iteration < maxIter))
     {
@@ -979,17 +965,20 @@ namespace NeoHookean_Newton
 
       // Assemble rhs
       assemble_system_rhs();
-      apply_boundaries_to_rhs(system_rhs, boundary_2_dof_x2);
+      apply_boundaries_to_rhs(&system_rhs, boundary_2_dof_x2);
 
       // Assemble the stiffness matrix
       assemble_system_matrix();
 
       // Assemble the drhs_dlambda
       assemble_drhs_dlambda(present_lambda);
+      apply_boundaries_to_rhs(&drhs_dlambda, boundary_2_dof_x2);
 
       // Get the solution diff (bottom boarder of system mat)
       solution_diff = present_solution;
       solution_diff -= previousSolution;
+      constraints.condense(solution_diff);
+      apply_boundaries_to_rhs(&solution_diff, boundary_2_dof_x2);
 
       // get the bottom corner of system mat
       lambda_diff = present_lambda - previousLambda;
@@ -1003,19 +992,20 @@ namespace NeoHookean_Newton
 
       line_search_and_add_step_length_PACA(current_residual, boundary_2_dof_x2, previousSolution, previousLambda, ds);
 
+
       evaluation_point = present_solution;
 
       solution_diff = evaluation_point;
       solution_diff -= previousSolution;
 
-      current_residual = sqrt( system_rhs.norm_sqr() + 0.5*( solution_diff.norm_sqr() +
-                                                              lambda_diff*lambda_diff - ds*ds) );
+      current_residual = sqrt( system_rhs.norm_sqr() +
+                              0.5*( solution_diff.norm_sqr() + lambda_diff*lambda_diff - ds*ds));
 
       iteration ++;
 
     }
     // output iterations for convergance.
-    std::cout << "    Converging Iterations : " << iteration << "\n";
+    std::cout << "    Converging Iterations : " << iteration << "         Residual : " << current_residual << std::endl;
   }
 
   template<int dim>
@@ -1042,16 +1032,15 @@ namespace NeoHookean_Newton
 
       update_F0(lambda_eval);
       assemble_system_rhs();
-      apply_boundaries_to_rhs(system_rhs, homogenous_dirichlet_dofs);
+      apply_boundaries_to_rhs(&system_rhs, homogenous_dirichlet_dofs);
 
 
       solutionDiff = present_solution;
       solutionDiff -= previousSolution;
       lambdaDiff = lambda_eval - previousLambda;
 
-      current_residual = sqrt( system_rhs.norm_sqr() + 0.5*( solutionDiff.norm_sqr() +
-                                                             lambdaDiff*lambdaDiff - ds*ds) );
-
+      current_residual  = sqrt( system_rhs.norm_sqr() +
+                                  0.5*( solutionDiff.norm_sqr() + lambdaDiff*lambdaDiff - ds*ds));
       if(current_residual < last_residual)
         break;
 
@@ -1076,7 +1065,7 @@ namespace NeoHookean_Newton
       evaluation_point.add(alpha, newton_update);
 
       assemble_system_rhs();
-      apply_boundaries_to_rhs(system_rhs, homogenous_dirichlet_dofs);
+      apply_boundaries_to_rhs(&system_rhs, homogenous_dirichlet_dofs);
 
       current_residual = system_rhs.l2_norm();
 
@@ -1125,7 +1114,7 @@ namespace NeoHookean_Newton
     double delta_star, delta, y1, g1, y2;
 
     // step 1
-    A_direct.vmult(omega, solution_diff);
+    A_direct.Tvmult(omega, solution_diff);
 
     // step 2
     delta_star = lambda_diff - omega*drhs_dlambda;
@@ -1607,7 +1596,7 @@ namespace NeoHookean_Newton
     double previous_lambda = lambda_start;
 
     present_lambda = lambda_start - 1e-6;
-    double ds = 0.1;
+    double ds = 0.05;
     branch_following_PACA_iterate(present_solution, lambda_start, unstable_eigenvector, 0.0, ds);
     output_results (2);
 
@@ -1631,7 +1620,7 @@ namespace NeoHookean_Newton
      lambda_tangent = present_lambda - previous_lambda;
 
      // now scale to length 1.0
-     scalingVal = 1.0/sqrt(solution_tangent.norm_sqr() + lambda_tangent*lambda_tangent);
+     scalingVal = 1.0/ds; // sqrt(solution_tangent.norm_sqr() + lambda_tangent*lambda_tangent);
      solution_tangent *= scalingVal;
      lambda_tangent *= scalingVal;
 
@@ -1639,6 +1628,7 @@ namespace NeoHookean_Newton
      previous_solution = present_solution;
 
      branch_following_PACA_iterate(present_solution, present_lambda, solution_tangent, lambda_tangent, ds);
+std::cout << "        lambda = " << present_lambda << std::endl;
 
      output_results(i + 2);
 

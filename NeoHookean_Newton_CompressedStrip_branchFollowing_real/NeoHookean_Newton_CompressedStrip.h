@@ -50,6 +50,8 @@
 #include <deal.II/lac/solver_minres.h>
 #include <deal.II/lac/lapack_full_matrix.h>
 
+#include <deal.II/lac/trilinos_sparse_matrix.h>
+
 namespace NeoHookean_Newton
 {
   using namespace dealii;
@@ -144,7 +146,7 @@ namespace NeoHookean_Newton
     void add_first_bif_displacements(double epsilon);
     void assemble_system_matrix();
     void assemble_system_rhs();
-    void apply_boundaries_to_rhs(Vector<double> rhs, std::vector<bool> homogenous_dirichlet_dofs);
+    void apply_boundaries_to_rhs(Vector<double> *rhs, std::vector<bool> homogenous_dirichlet_dofs);
     void assemble_system_energy_and_congugate_lambda(double lambda_eval);
     void assemble_drhs_dlambda(double lambda_eval);
     void newton_iterate();
