@@ -324,13 +324,6 @@ namespace NeoHookean_Newton
                                        boundary_2_dof_x2,
                                        boundary_id_2);
 
-   /* // and the vector if it is a boundary 0 or 1 x2 dof. These are already constrained to each other.
-    std::vector<bool> boundary_01_dof_x2 (number_dofs, false);
-    DoFTools::extract_boundary_dofs (dof_handler,
-                                     x2_mask,
-                                     boundary_01_dof_x2,
-                                     boundary_id_01);*/
-
 
     matched_dofs.resize(number_dofs, -1);
     for(unsigned int i = 0; i < number_dofs; i++)
@@ -472,53 +465,6 @@ namespace NeoHookean_Newton
     }
 
     evaluation_point = present_solution;
-
-  }
-
-  template <int dim>
-  void ElasticProblem<dim>::add_first_bif_displacements(double epsilon)
-  {
-   /* add the bifurcated solution to the current (zero) solution vector.
-    * epsilon scales the magnitude of the added bifurcated solution.
-    */
-
-    std::vector<Point<dim>> support_points(dof_handler.n_dofs());
-    MappingQ1<dim> mapping;
-    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
-
-    const unsigned int   number_dofs = dof_handler.n_dofs();
-
-    std::vector<bool> x1_components = {true, false};
-    ComponentMask x1_mask(x1_components);
-
-    std::vector<bool> is_x1_comp(number_dofs, false);
-
-    DoFTools::extract_dofs(dof_handler, x1_mask, is_x1_comp);
-
-    for (unsigned int i = 0; i < number_dofs; i++)
-    {
-      if(is_x1_comp[i])
-      {
-        // it is an x1 component
-
-        double v1 = 0.0;
-        for (int j = 0; j < 4; j++)
-          v1 += amplitudes_v1[j]*exp(charateristic_roots[j]*support_points[i](1));
-
-        present_solution[i] += -epsilon*sin(critical_frequency*support_points[i](0))*v1;
-      }
-      else
-      {
-        // it is an x2 component
-
-        double v2 = 0.0;
-        for (int j = 0; j < 4; j++)
-          v2 += amplitudes_v2[j]*exp(charateristic_roots[j]*support_points[i](1));
-
-        present_solution[i] += epsilon*cos(critical_frequency*support_points[i](0))*v2;
-
-      }
-    }
 
   }
 
@@ -698,16 +644,6 @@ namespace NeoHookean_Newton
   }
 
   template <int dim>
-  void ElasticProblem<dim>::apply_boundaries_to_rhs(Vector<double> *rhs, std::vector<bool> homogenous_dirichlet_dofs)
-  {
-    for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
-    {
-      if (homogenous_dirichlet_dofs[i] == true)
-        (*rhs)[i] = 0.0;
-    }
-  }
-
-  template <int dim>
   void ElasticProblem<dim>::assemble_system_energy_and_congugate_lambda(double lambda_eval)
   {
 
@@ -870,6 +806,16 @@ namespace NeoHookean_Newton
   }
 
   template <int dim>
+  void ElasticProblem<dim>::apply_boundaries_to_rhs(Vector<double> *rhs, std::vector<bool> homogenous_dirichlet_dofs)
+  {
+    for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
+    {
+      if (homogenous_dirichlet_dofs[i] == true)
+        (*rhs)[i] = 0.0;
+    }
+  }
+
+  template <int dim>
   void ElasticProblem<dim>::newton_iterate()
   {
     /* This function executes the newton iterations until it converges to a solution
@@ -972,7 +918,6 @@ namespace NeoHookean_Newton
                             ( solution_diff.norm_sqr() + lambda_diff*lambda_diff - ds*ds);
     current_residual = sqrt(current_residual);
 
-    std::cout << "Starting Residual : " << current_residual << std::endl;
     while ((current_residual > tol) &&
         (iteration < maxIter))
     {
@@ -1021,7 +966,7 @@ namespace NeoHookean_Newton
 
     }
     // output iterations for convergance.
-    std::cout << "    Converging Iterations : " << iteration << "         Residual : " << current_residual << std::endl;
+    std::cout << "\n    Converging Iterations : " << iteration << "         Residual : " << current_residual << std::endl;
   }
 
   template<int dim>
@@ -1098,16 +1043,9 @@ namespace NeoHookean_Newton
   void ElasticProblem<dim>::solve ()
   {
 
-    /*
-    SolverControl           solver_control (10000, 1e-12);
-    SolverCG<>              cg (solver_control);
 
-    PreconditionSSOR<> preconditioner;
-    preconditioner.initialize(system_matrix, 1.2);
+    // direct solver for the system
 
-    cg.solve (system_matrix, newton_update, system_rhs,
-              preconditioner);
-*/
     SparseDirectUMFPACK  A_direct;
     A_direct.initialize(system_matrix);
     A_direct.vmult (newton_update, system_rhs);
@@ -1132,7 +1070,7 @@ namespace NeoHookean_Newton
     double delta_star, delta, y1, g1, y2;
 
     // step 1
-    A_direct.Tvmult(omega, solution_diff);
+    A_direct.vmult(omega, solution_diff);
 
     // step 2
     delta_star = lambda_diff - omega*drhs_dlambda;
@@ -1427,9 +1365,6 @@ namespace NeoHookean_Newton
 
     grid_dimensions.resize(2);
     domain_dimensions.resize(2);
-    charateristic_roots.resize(4);
-    amplitudes_v1.resize(4);
-    amplitudes_v2.resize(4);
 
     fid = std::fopen(filename, "r");
     if (fid == NULL)
@@ -1479,36 +1414,6 @@ namespace NeoHookean_Newton
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
       valuesWritten = sscanf(nextLine, "%lg", &critical_frequency);
       if(valuesWritten != 1)
-      {
-        fileReadErrorFlag = true;
-        goto fileClose;
-      }
-
-      // read in the roots to the characteristic
-      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg",
-          &charateristic_roots[0], &charateristic_roots[1], &charateristic_roots[2], &charateristic_roots[3]);
-      if(valuesWritten != 4)
-      {
-        fileReadErrorFlag = true;
-        goto fileClose;
-      }
-
-      // read in the v1 amplitudes
-      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg",
-          &amplitudes_v1[0], &amplitudes_v1[1], &amplitudes_v1[2], &amplitudes_v1[3]);
-      if(valuesWritten != 4)
-      {
-        fileReadErrorFlag = true;
-        goto fileClose;
-      }
-
-      // read in the v2 amplitudes
-      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg",
-          &amplitudes_v2[0], &amplitudes_v2[1], &amplitudes_v2[2], &amplitudes_v2[3]);
-      if(valuesWritten != 4)
       {
         fileReadErrorFlag = true;
         goto fileClose;
@@ -1645,18 +1550,22 @@ namespace NeoHookean_Newton
     newton_iterate();
     output_results (1);
 
-    get_system_eigenvalues(lambda_start, 222, true);
+    get_system_eigenvalues(lambda_start, -1, true);
 
     // Ok, so the eigenvector is actually kinda messed up because of the symmetry. So
     // it is only filled with half of the x2 displacements ( the other half are zero). So
-    // this is just filling the, in.
-    std::vector<Point<dim>> support_points(dof_handler.n_dofs());
-    MappingQ1<dim> mapping;
-    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
+    // this is just filling them in.
+
+    double root_1by2 = sqrt(0.5);
     for (unsigned int i =0 ; i< dof_handler.n_dofs(); i++)
     {
-      if((matched_dofs[i] != -1 ) && (support_points[i](0) > 0.0))
-        unstable_eigenvector[matched_dofs[i]] = unstable_eigenvector[i];
+      if(matched_dofs[i] != -1 )
+      {
+        double tmp;
+        tmp = root_1by2*(unstable_eigenvector[matched_dofs[i]] + unstable_eigenvector[i]);
+        unstable_eigenvector[matched_dofs[i]] = tmp;
+        unstable_eigenvector[i] = tmp;
+      }
 
     }
     unstable_eigenvector *= (1.0/unstable_eigenvector.l2_norm());
@@ -1668,7 +1577,7 @@ namespace NeoHookean_Newton
     double previous_lambda = lambda_start;
 
     present_lambda = lambda_start - 1e-6;
-    double ds = 0.05;
+    double ds = 0.002;
     branch_following_PACA_iterate(present_solution, lambda_start, unstable_eigenvector, 0.0, ds);
     output_results (2);
 
@@ -1679,7 +1588,7 @@ namespace NeoHookean_Newton
 
 
 
-    unsigned int load_steps = 10;
+    unsigned int load_steps = 3001;
     std::vector<double> lambda_values(load_steps);
     std::vector<double> congugate_lambda_values(load_steps);
     std::vector<double> energy_values(load_steps);
@@ -1700,9 +1609,10 @@ namespace NeoHookean_Newton
      previous_solution = present_solution;
 
      branch_following_PACA_iterate(present_solution, present_lambda, solution_tangent, lambda_tangent, ds);
-std::cout << "        lambda = " << present_lambda << std::endl;
+     std::cout << std::setprecision(15) << "    lambda = " << present_lambda << std::endl;
 
-     output_results(i + 2);
+     if ((i % 20) == 0)
+       output_results(i/20 + 2);
 
      // get energy and congugate lambda value and save them.
      assemble_system_energy_and_congugate_lambda(present_lambda);
@@ -1713,46 +1623,35 @@ std::cout << "        lambda = " << present_lambda << std::endl;
     }
     output_load_info(lambda_values, energy_values, congugate_lambda_values);
 
-    /*
-    update_F0(critical_lambda + 0.000002);
-        newton_iterate(tol, 50);
-        output_results (3);
-*/
+    // now just check the eigenvectors...
+    LAPACKFullMatrix<double> system_matrix_full;
+    system_matrix_full.copy_from(system_matrix);
+
+    Vector<double> eigenvalues;
+    FullMatrix<double> eigenvectors;
+
+    system_matrix_full.compute_eigenvalues();
+
+    std::string filename = "output/eigenvalues_end.dat";
 
 
-    // output initial mesh
-/*
-    std::vector<double> lambda_values(load_steps);
-    std::vector<double> congugate_lambda_values(load_steps);
-    std::vector<double> energy_values(load_steps);
+         std::ofstream outputFile;
+         outputFile.open(filename.c_str());
 
-    double lambda_step = final_lambda/load_steps;
-    double lambda = 0.0;
-    for(unsigned int i = 0; i < load_steps; i++)
+         outputFile << "# eigenvalues of the system matrix" << std::endl;
+
+         bool isPositiveDefinite = true;
+    for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
     {
+      std::complex<double> nextEigVal = system_matrix_full.eigenvalue(i);
+      if (nextEigVal.real() < 0.0)
+        isPositiveDefinite = false;
 
-      // update lambda
-      lambda +=lambda_step;
-      std::cout << "Load step "<< i + 1 << " With loading parameter lambda = " << lambda << std::endl;
-
-      update_F0(lambda);
-
-      newton_iterate(tol, 50);
-
-      // get energy and congugate lambda value and save them.
-      assemble_system_energy_and_congugate_lambda(lambda);
-      lambda_values[i] = lambda;
-      congugate_lambda_values[i] = congugate_lambda;
-      energy_values[i] = system_energy;
-
-      std::cout << "    System Energy: " << system_energy << "\n\n";
-
-      // output data if we're on the right step.
-      if((i+1)%output_every_n == 0)
-        output_results ((i+1)/output_every_n);
+      outputFile << std::setprecision(15) << nextEigVal << std::endl;
     }
-*/
-    // output_load_info(lambda_values, energy_values, congugate_lambda_values);
+    outputFile << std::endl << "Is positive definite : " << isPositiveDefinite << std::endl;
+
+    outputFile.close();
   }
 }
 

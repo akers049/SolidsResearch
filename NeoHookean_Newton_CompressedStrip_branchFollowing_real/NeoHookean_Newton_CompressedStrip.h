@@ -143,12 +143,11 @@ namespace NeoHookean_Newton
     void set_boundary_values();
     void update_F0(const double lambda);
     void add_small_pertubations(double amplitude, bool firstTime);
-    void add_first_bif_displacements(double epsilon);
     void assemble_system_matrix();
     void assemble_system_rhs();
-    void apply_boundaries_to_rhs(Vector<double> *rhs, std::vector<bool> homogenous_dirichlet_dofs);
     void assemble_system_energy_and_congugate_lambda(double lambda_eval);
     void assemble_drhs_dlambda(double lambda_eval);
+    void apply_boundaries_to_rhs(Vector<double> *rhs, std::vector<bool> homogenous_dirichlet_dofs);
     void newton_iterate();
     void branch_following_PACA_iterate(Vector<double> previousSolution, double preivousLambda,
                                         Vector<double> solVectorGuess,
@@ -211,9 +210,7 @@ namespace NeoHookean_Newton
     double kappa = 0.0;
     double critical_lambda_analytical = 0.0;
     double critical_frequency = 0.0;
-    std::vector<double> charateristic_roots;
-    std::vector<double> amplitudes_v1;
-    std::vector<double> amplitudes_v2;
+
 
     NuFunction<dim> nu;
     MuFunction<dim> *mu = NULL;
