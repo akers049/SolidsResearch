@@ -157,8 +157,9 @@ namespace NeoHookean_Newton
                                               Vector<double> previousSolution, double previousLambda, double ds);
     void solve();
     void solve_boarder_matrix_system();
-    bool get_system_eigenvalues(double lambda_eval, const int cycle,
-                                bool writeEigVect = false);
+    bool get_system_eigenvalues(double lambda_eval, const int cycle);
+    void set_unstable_eigenvector(double lambda_eval, unsigned int index);
+
     double bisect_find_lambda_critical(double lowerBound, double upperBound,
                                        double tol, unsigned int maxIter);
     void output_results(const unsigned int cycle) const;

@@ -297,6 +297,7 @@ namespace NeoHookean_Newton
     }
 
     // now do the constraint that the x2 displacements are symmetric about the line x1 = 0
+    // and the x1 displacements are antisymmetric
 
     // get the coords of the dofs
     std::vector<Point<dim>> support_points(number_dofs);
@@ -325,19 +326,15 @@ namespace NeoHookean_Newton
                                        boundary_id_2);
 
 
+
     matched_dofs.resize(number_dofs, -1);
     for(unsigned int i = 0; i < number_dofs; i++)
     {
       if (is_x2_comp[i])
       {
-        if (boundary_2_dof_x2[i] || (matched_dofs[i] != -1))
+        if ( boundary_2_dof_x2[i] || matched_dofs[i] != -1 || (support_points[i](0) == 0.0))
         {
-          // these dofs have already been constrained!
-          continue;
-        }
-        else if (support_points[i](0) == 0.0)
-        {
-          // these are in the "miidle" so we don't constrained them
+          // this dof has already been constrained or don't need to be
           continue;
         }
         else
@@ -346,28 +343,45 @@ namespace NeoHookean_Newton
           double x2_coord = support_points[i](1);
           for (unsigned int j = 0; j < number_dofs; j++)
           {
-
-            if (i == j)
-              continue;
-
-            if (is_x2_comp[j])
+            if (is_x2_comp[j] && (fabs(x1_coord + support_points[j](0)) < 1e-12 ) &&
+                                  (fabs(x2_coord - support_points[j](1)) < 1e-12))
             {
-              if ((fabs(x1_coord + support_points[j](0)) < 1e-12 ) && (fabs(x2_coord - support_points[j](1)) < 1e-12))
-              {
-                constraints.add_line (i);
-                constraints.add_entry (i, j, 1);
-                matched_dofs[i] = j;
-                matched_dofs[j] = i;
-                continue;
-              }
-
-            }
-            else
-              continue;
+              constraints.add_line (i);
+              constraints.add_entry (i, j, 1);
+              matched_dofs[i] = j;
+              matched_dofs[j] = i;
+              break;
             }
           }
         }
       }
+      else
+      {
+        if ( boundary_01_dof_x1[i] || matched_dofs[i] != -1 || (support_points[i](0) == 0.0))
+        {
+          // this dof has already been constrained or don't need to be
+          continue;
+        }
+        else
+        {
+          double x1_coord = support_points[i](0);
+          double x2_coord = support_points[i](1);
+          for (unsigned int j = 0; j < number_dofs; j++)
+          {
+            if ((!is_x2_comp[j]) && (fabs(x1_coord + support_points[j](0)) < 1e-12 ) &&
+                                  (fabs(x2_coord - support_points[j](1)) < 1e-12))
+            {
+              constraints.add_line (i);
+              constraints.add_entry (i, j, -1);
+              matched_dofs[i] = j;
+              matched_dofs[j] = i;
+              break;
+            }
+          }
+        }
+      }
+    }
+
 
 
     constraints.close ();
@@ -1108,10 +1122,8 @@ namespace NeoHookean_Newton
   }
 
   template<int dim>
-  bool ElasticProblem<dim>::get_system_eigenvalues(double lambda_eval, const int cycle,
-                                                   bool writeEigVect)
+  bool ElasticProblem<dim>::get_system_eigenvalues(double lambda_eval, const int cycle)
   {
-
 
     update_F0(lambda_eval);
     assemble_system_matrix();
@@ -1149,13 +1161,6 @@ namespace NeoHookean_Newton
         if (nextEigenVal < 0.0)
         {
           positive_definite = false;
-
-          if (writeEigVect)
-          {
-            unstable_eigenvector.reinit(dof_handler.n_dofs());
-            for (unsigned int j = 0; j < dof_handler.n_dofs(); j++)
-              unstable_eigenvector[j] = eigenvectors[j][i];
-          }
         }
 
       }
@@ -1170,18 +1175,47 @@ namespace NeoHookean_Newton
         if (eigenvalues[i] < 0.0)
         {
           positive_definite = false;
-          if (writeEigVect)
-          {
-            unstable_eigenvector.reinit(dof_handler.n_dofs());
-            for (unsigned int j = 0; j < dof_handler.n_dofs(); j++)
-              unstable_eigenvector[j] = eigenvectors[j][i];
-          }
           break;
         }
       }
     }
 
     return positive_definite;
+  }
+
+  template <int dim>
+  void ElasticProblem<dim>::set_unstable_eigenvector(double lambda_eval, unsigned int index)
+  {
+    update_F0(lambda_eval);
+    assemble_system_matrix();
+
+    // copy current sparse system matrix to a full matrix.
+    LAPACKFullMatrix<double> system_matrix_full;
+    system_matrix_full.copy_from(system_matrix);
+
+    Vector<double> eigenvalues;
+    FullMatrix<double> eigenvectors;
+
+    system_matrix_full.compute_eigenvalues_symmetric(-1.0, 1.0, 1e-6, eigenvalues, eigenvectors);
+
+    unsigned int numNegVals = 0;
+    for (unsigned int i = 0 ; i < eigenvalues.size(); i ++)
+    {
+      double nextEigenVal = eigenvalues[i];
+      if (nextEigenVal < 0.0)
+      {
+        numNegVals ++;
+
+        if (numNegVals == index)
+        {
+          unstable_eigenvector.reinit(dof_handler.n_dofs());
+          for (unsigned int j = 0; j < dof_handler.n_dofs(); j++)
+            unstable_eigenvector[j] = eigenvectors[j][i];
+
+          break;
+        }
+      }
+    }
   }
 
   template <int dim>
@@ -1550,26 +1584,11 @@ namespace NeoHookean_Newton
     newton_iterate();
     output_results (1);
 
-    get_system_eigenvalues(lambda_start, -1, true);
+    set_unstable_eigenvector(lambda_start, 1);
 
-    // Ok, so the eigenvector is actually kinda messed up because of the symmetry. So
-    // it is only filled with half of the x2 displacements ( the other half are zero). So
-    // this is just filling them in.
-
-    double root_1by2 = sqrt(0.5);
-    for (unsigned int i =0 ; i< dof_handler.n_dofs(); i++)
-    {
-      if(matched_dofs[i] != -1 )
-      {
-        double tmp;
-        tmp = root_1by2*(unstable_eigenvector[matched_dofs[i]] + unstable_eigenvector[i]);
-        unstable_eigenvector[matched_dofs[i]] = tmp;
-        unstable_eigenvector[i] = tmp;
-      }
-
-    }
+    // So the eigenvector had bad entries for the constrained dofs, so need to distribute the constraints
+    constraints.distribute(unstable_eigenvector);
     unstable_eigenvector *= (1.0/unstable_eigenvector.l2_norm());
-
 
 
 
@@ -1601,7 +1620,7 @@ namespace NeoHookean_Newton
      lambda_tangent = present_lambda - previous_lambda;
 
      // now scale to length 1.0
-     scalingVal = 1.0/ds; // sqrt(solution_tangent.norm_sqr() + lambda_tangent*lambda_tangent);
+     scalingVal = 1.0/ds;
      solution_tangent *= scalingVal;
      lambda_tangent *= scalingVal;
 
@@ -1612,7 +1631,10 @@ namespace NeoHookean_Newton
      std::cout << std::setprecision(15) << "    lambda = " << present_lambda << std::endl;
 
      if ((i % 20) == 0)
+     {
        output_results(i/20 + 2);
+       get_system_eigenvalues(present_lambda, i/20);
+     }
 
      // get energy and congugate lambda value and save them.
      assemble_system_energy_and_congugate_lambda(present_lambda);
@@ -1622,36 +1644,6 @@ namespace NeoHookean_Newton
 
     }
     output_load_info(lambda_values, energy_values, congugate_lambda_values);
-
-    // now just check the eigenvectors...
-    LAPACKFullMatrix<double> system_matrix_full;
-    system_matrix_full.copy_from(system_matrix);
-
-    Vector<double> eigenvalues;
-    FullMatrix<double> eigenvectors;
-
-    system_matrix_full.compute_eigenvalues();
-
-    std::string filename = "output/eigenvalues_end.dat";
-
-
-         std::ofstream outputFile;
-         outputFile.open(filename.c_str());
-
-         outputFile << "# eigenvalues of the system matrix" << std::endl;
-
-         bool isPositiveDefinite = true;
-    for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)
-    {
-      std::complex<double> nextEigVal = system_matrix_full.eigenvalue(i);
-      if (nextEigVal.real() < 0.0)
-        isPositiveDefinite = false;
-
-      outputFile << std::setprecision(15) << nextEigVal << std::endl;
-    }
-    outputFile << std::endl << "Is positive definite : " << isPositiveDefinite << std::endl;
-
-    outputFile.close();
   }
 }
 
