@@ -209,6 +209,31 @@ namespace NeoHookean_Newton
     corner2(0) =  domain_dimensions[0]/2.0;
     corner2(1) =  domain_dimensions[1];
     GridGenerator::subdivided_hyper_rectangle (triangulation, grid_dimensions, corner1, corner2, true);
+
+
+    // Now we will refine this mesh
+    const int numSections = 2;
+    for (int i = 0 ; i < numSections; i ++)
+    {
+      double section_x2 = (0.5/numSections)*i + 0.5;
+      Triangulation<2>::active_cell_iterator cell = triangulation.begin_active();
+      Triangulation<2>::active_cell_iterator endc = triangulation.end();
+      for (; cell!=endc; ++cell)
+      {
+        for (unsigned int v=0;
+             v < GeometryInfo<2>::vertices_per_cell;
+             ++v)
+          {
+            const double x2_pos = (cell->vertex(v))(1);
+            if ( x2_pos > section_x2)
+              {
+                cell->set_refine_flag ();
+                break;
+              }
+          }
+      }
+      triangulation.execute_coarsening_and_refinement ();
+    }
   }
 
   template <int dim>
@@ -245,13 +270,10 @@ namespace NeoHookean_Newton
   {
     constraints.clear ();
 
-    DoFTools::make_hanging_node_constraints (dof_handler, constraints);
-
-
     // periodic in x1 on 0 and 1 face (x1 faces) will do the x2 direction with x2 symmetry...
     DoFTools::make_periodicity_constraints<DoFHandler<dim>>(dof_handler, 0, 1, 0, constraints);
 
-    // now do constraints that the average x1 displacement on boundary 2 is zero
+    // now do constraints that the average x1 displacement is zero
 
     const unsigned int   number_dofs = dof_handler.n_dofs();
 
@@ -357,7 +379,11 @@ namespace NeoHookean_Newton
       }
       else
       {
-        if ( boundary_01_dof_x1[i] || matched_dofs[i] != -1 || (support_points[i](0) == 0.0))
+        if (support_points[i](0) == 0.0)
+        {
+          constraints.add_line(i);
+        }
+        else if ( boundary_01_dof_x1[i] || matched_dofs[i] != -1 || (support_points[i](0) == 0.0))
         {
           // this dof has already been constrained or don't need to be
           continue;
@@ -381,11 +407,17 @@ namespace NeoHookean_Newton
         }
       }
     }
-
-
-
     constraints.close ();
 
+    // now do hanging nodes. Because some of the constraints might refer to the same dof
+    // for both the symmetry constraint and the hanging node constraint, we will make them
+    // separate, then merge them, giving precedence to the hanging node constraints;
+    ConstraintMatrix hanging_node_constraints;
+    hanging_node_constraints.clear();
+    DoFTools::make_hanging_node_constraints (dof_handler, hanging_node_constraints);
+    hanging_node_constraints.close();
+
+    constraints.merge(hanging_node_constraints, ConstraintMatrix::MergeConflictBehavior::right_object_wins);
   }
 
   template<int dim>
@@ -1072,7 +1104,7 @@ namespace NeoHookean_Newton
   {
 
     // steps to solving board system as described in
-    // Govaerts's Numerical methods for bifurcation of dynamical equilibria 3.6.2
+    // Govaerts's Numerical methods for bifurcation of dynamical equillibria 3.6.2
 
     SparseDirectUMFPACK  A_direct;
     A_direct.initialize(system_matrix);
@@ -1216,10 +1248,15 @@ namespace NeoHookean_Newton
         }
       }
     }
+
+    // So the eigenvector had bad entries for the constrained dofs, so need to distribute the constraints
+    constraints.distribute(unstable_eigenvector);
+    unstable_eigenvector *= (1.0/unstable_eigenvector.l2_norm());
   }
 
   template <int dim>
-  double ElasticProblem<dim>::bisect_find_lambda_critical(double lowerBound, double upperBound, double tol, unsigned int maxIter)
+  double ElasticProblem<dim>::bisect_find_lambda_critical(double lowerBound, double upperBound,
+                                                          double tol, unsigned int maxIter)
   {
     unsigned int N = 1;
     double middleVal = 0.0;
@@ -1571,7 +1608,10 @@ namespace NeoHookean_Newton
 
     // get the critical lambda value
     evaluation_point = present_solution;
-    double lambda_c = bisect_find_lambda_critical(critical_lambda_analytical - 0.01, critical_lambda_analytical + 0.01, 1e-6, 50);
+
+    double lambda_c =
+        bisect_find_lambda_critical(critical_lambda_analytical - 0.01,
+                                    critical_lambda_analytical + 0.01, 1e-6, 50);
 
     std::cout << "The lambda_c is: " << lambda_c << std::endl;
 
@@ -1579,18 +1619,13 @@ namespace NeoHookean_Newton
     newton_iterate();
     output_results (0);
 
-    double lambda_start = lambda_c + 3e-6;
+    double lambda_start = lambda_c + 1e-6;
     update_F0(lambda_start);
     newton_iterate();
     output_results (1);
 
+    // set the eigenvector for the unstable mode
     set_unstable_eigenvector(lambda_start, 1);
-
-    // So the eigenvector had bad entries for the constrained dofs, so need to distribute the constraints
-    constraints.distribute(unstable_eigenvector);
-    unstable_eigenvector *= (1.0/unstable_eigenvector.l2_norm());
-
-
 
     Vector<double> previous_solution = present_solution;
     double previous_lambda = lambda_start;
@@ -1607,7 +1642,7 @@ namespace NeoHookean_Newton
 
 
 
-    unsigned int load_steps = 3001;
+    unsigned int load_steps = 3501;
     std::vector<double> lambda_values(load_steps);
     std::vector<double> congugate_lambda_values(load_steps);
     std::vector<double> energy_values(load_steps);
