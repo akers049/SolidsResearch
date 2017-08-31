@@ -2,10 +2,10 @@
 # Blank lines and ones starting with '#' are ignored.
 
 # Dimensions of grids in x1 and x2, respectfully: unsigned int     unsigned int
-20   25
+8   8
 
 # Absolute tolerance on the l2 norm of the residual for the newton iteration: double
-1e-12 100
+1e-9 150
 
 # exponential growth parameter kappa
 1.6
@@ -15,6 +15,12 @@
 
 # critical frequency
 2.231216000000000
+
+# ds and load steps : double     unsigned int
+0.0001 3000
+
+# output every n steps: unsigned int
+10
 
 # roots of the characteristic equation
 -3.946470017699863  -3.358104477616700   1.758104477616702   2.346470017699867

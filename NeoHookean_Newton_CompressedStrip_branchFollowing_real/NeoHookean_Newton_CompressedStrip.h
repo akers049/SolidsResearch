@@ -165,7 +165,8 @@ namespace NeoHookean_Newton
     void output_results(const unsigned int cycle) const;
     void output_load_info(std::vector<double> lambda_values,
                           std::vector<double> energy_values,
-                          std::vector<double> congugate_lambda_values) const;
+                          std::vector<double> congugate_lambda_values,
+                          std::vector<double> displacement_magnitude)  const;
     void read_input_file(char* filename);
     void getNextDataLine( FILE* const filePtr, char* nextLinePtr,
                             int const maxSize, int* const endOfFileFlag);
@@ -212,6 +213,9 @@ namespace NeoHookean_Newton
     double critical_lambda_analytical = 0.0;
     double critical_frequency = 0.0;
 
+    double ds = 0.0;
+    unsigned int load_steps = 0;
+    unsigned int output_every = 0;
 
     NuFunction<dim> nu;
     MuFunction<dim> *mu = NULL;

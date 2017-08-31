@@ -1167,7 +1167,7 @@ namespace NeoHookean_Newton
     Vector<double> eigenvalues;
     FullMatrix<double> eigenvectors;
 
-    system_matrix_full.compute_eigenvalues_symmetric(-1.0, 1.0, 1e-6, eigenvalues, eigenvectors);
+    system_matrix_full.compute_eigenvalues_symmetric(-0.3, 0.3, 1e-6, eigenvalues, eigenvectors);
 
 
     bool positive_definite = true;
@@ -1228,7 +1228,7 @@ namespace NeoHookean_Newton
     Vector<double> eigenvalues;
     FullMatrix<double> eigenvectors;
 
-    system_matrix_full.compute_eigenvalues_symmetric(-1.0, 1.0, 1e-6, eigenvalues, eigenvectors);
+    system_matrix_full.compute_eigenvalues_symmetric(-0.3, 0.3, 1e-6, eigenvalues, eigenvectors);
 
     unsigned int numNegVals = 0;
     for (unsigned int i = 0 ; i < eigenvalues.size(); i ++)
@@ -1398,7 +1398,8 @@ namespace NeoHookean_Newton
   template<int dim>
   void ElasticProblem<dim>::output_load_info(std::vector<double> lambda_values,
                                              std::vector<double> energy_values,
-                                             std::vector<double> congugate_lambda_values) const
+                                             std::vector<double> congugate_lambda_values,
+                                             std::vector<double> displacement_magnitude) const
   {
 
     // see if output directory exists, if not create it
@@ -1418,7 +1419,8 @@ namespace NeoHookean_Newton
     {
       load_data_output << std::setprecision(15) << std::setw(8) << lambda_values[i];
       load_data_output << std::setprecision(15) << std::setw(25) << energy_values[i];
-      load_data_output << std::setprecision(15) << std::setw(25) << congugate_lambda_values[i] << std::endl;
+      load_data_output << std::setprecision(15) << std::setw(25) << congugate_lambda_values[i];
+      load_data_output << std::setprecision(15) << std::setw(25) << displacement_magnitude[i] << std::endl;
     }
 
     load_data_output.close();
@@ -1490,11 +1492,28 @@ namespace NeoHookean_Newton
         goto fileClose;
       }
 
+      // read in the critical frequency
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg %u", &ds, &load_steps);
+      if(valuesWritten != 2)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
 
-     fileClose:
-     {
-       fclose(fid);
-     }
+      // read in the critical frequency
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%u", &output_every);
+      if(valuesWritten != 1)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+
+      fileClose:
+      {
+        fclose(fid);
+      }
     }
 
     if (fileReadErrorFlag)
@@ -1618,6 +1637,8 @@ namespace NeoHookean_Newton
     update_F0(0);
     newton_iterate();
     output_results (0);
+    assemble_system_energy_and_congugate_lambda(0.0);
+
 
     double lambda_start = lambda_c + 1e-6;
     update_F0(lambda_start);
@@ -1631,7 +1652,7 @@ namespace NeoHookean_Newton
     double previous_lambda = lambda_start;
 
     present_lambda = lambda_start - 1e-6;
-    double ds = 0.002;
+
     branch_following_PACA_iterate(present_solution, lambda_start, unstable_eigenvector, 0.0, ds);
     output_results (2);
 
@@ -1640,12 +1661,14 @@ namespace NeoHookean_Newton
     double lambda_tangent;
     double scalingVal;
 
-
-
-    unsigned int load_steps = 3501;
     std::vector<double> lambda_values(load_steps);
     std::vector<double> congugate_lambda_values(load_steps);
     std::vector<double> energy_values(load_steps);
+    std::vector<double> displacement_magnitude(load_steps);
+    lambda_values[0] = 0.0;
+    congugate_lambda_values[0] = congugate_lambda;
+    energy_values[0] = system_energy;
+
     for(unsigned int i = 1; i < load_steps; i ++)
     {
 
@@ -1665,10 +1688,10 @@ namespace NeoHookean_Newton
      branch_following_PACA_iterate(present_solution, present_lambda, solution_tangent, lambda_tangent, ds);
      std::cout << std::setprecision(15) << "    lambda = " << present_lambda << std::endl;
 
-     if ((i % 20) == 0)
+     if ((i % output_every) == 0)
      {
-       output_results(i/20 + 2);
-       get_system_eigenvalues(present_lambda, i/20);
+       output_results(i/output_every + 2);
+       get_system_eigenvalues(present_lambda, i/output_every);
      }
 
      // get energy and congugate lambda value and save them.
@@ -1676,9 +1699,10 @@ namespace NeoHookean_Newton
      lambda_values[i] = present_lambda;
      congugate_lambda_values[i] = congugate_lambda;
      energy_values[i] = system_energy;
+     displacement_magnitude[i] = present_solution.l2_norm();
 
     }
-    output_load_info(lambda_values, energy_values, congugate_lambda_values);
+    output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude);
   }
 }
 
