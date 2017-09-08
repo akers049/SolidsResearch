@@ -1,0 +1,32 @@
+# this is an example input file for the NeoHookean_Newton_CompressedStrip code.
+# Blank lines and ones starting with '#' are ignored.
+
+# Dimensions of grids in x1 and x2, respectfully: unsigned int     unsigned int
+10 15
+
+# Absolute tolerance on the l2 norm of the residual for the newton iteration: double
+1e-9 150
+
+# exponential growth parameter kappa
+1.6
+
+# critical load
+0.354517918137230
+
+# critical frequency
+2.231216000000000
+
+# ds and load steps : double     unsigned int
+0.0001 3000
+
+# output every n steps: unsigned int
+10
+
+# roots of the characteristic equation
+-3.946470017699863  -3.358104477616700   1.758104477616702   2.346470017699867
+
+# the associated eigen vector
+-0.381505889895112   0.498227136236645   0.674793494078628  -0.434209785209842
+
+# amplitudes v2
+0.413823986537119  -0.865800574570996   0.796265438766703  -0.344288850732826
