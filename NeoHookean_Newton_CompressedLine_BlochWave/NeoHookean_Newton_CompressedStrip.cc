@@ -199,7 +199,7 @@ namespace NeoHookean_Newton
   {
 
     // set domain dimensions
-    domain_dimensions[0] = (2.0*(4.0*atan(1.0))/critical_frequency)/8.0;
+    domain_dimensions[0] = (2.0*(4.0*atan(1.0))/critical_frequency)/10.0;
     domain_dimensions[1] = 1.0;
 
     // creates our strip.
@@ -265,26 +265,31 @@ namespace NeoHookean_Newton
     sparsity_pattern.copy_from (dsp);
     system_matrix.reinit (sparsity_pattern);
 
-    // manually do the sparsity pattern...
+    // manually do the sparsity stuff for the double sized matrix
     const unsigned int number_dofs = dof_handler.n_dofs();
-    sparsity_pattern_bloch.reinit(2*number_dofs, 2*number_dofs, 2*number_dofs);
-    for (unsigned int i = 0; i < number_dofs; i ++)
+    DynamicSparsityPattern dsp_bloch(2*number_dofs, 2*number_dofs);
+
+    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
+    std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
+    typename DoFHandler<dim>::active_cell_iterator cell = dof_handler.begin_active(),
+                                                   endc = dof_handler.end();
+    for (; cell!=endc; ++cell)
     {
-      for (unsigned int j = 0; j < number_dofs; j ++)
-      {
-  //      if (sparsity_pattern.exists(i, j))
-  //      {
-          sparsity_pattern_bloch.add(i, j);
+      cell->get_dof_indices (local_dof_indices);
+      constraints_bloch.add_entries_local_to_global (local_dof_indices,
+                                                            dsp_bloch,
+                                                           /*keep_constrained_dofs*/ true);
+      for(unsigned int i = 0; i < dofs_per_cell; i++)
+        local_dof_indices[i] += number_dofs;
 
-          sparsity_pattern_bloch.add(i + number_dofs, j + number_dofs);
 
-          sparsity_pattern_bloch.add(i + number_dofs, j);
-
-          sparsity_pattern_bloch.add(i, j + number_dofs);
- //       }
-      }
+      constraints_bloch.add_entries_local_to_global (local_dof_indices,
+                                                            dsp_bloch,
+                                                           /*keep_constrained_dofs*/ true);
     }
-    sparsity_pattern_bloch.compress();
+
+    sparsity_pattern_bloch.copy_from(dsp_bloch);
+
     bloch_matrix.reinit(sparsity_pattern_bloch);
 
   }
@@ -341,7 +346,8 @@ namespace NeoHookean_Newton
 
     }
 */
-   /* std::vector<bool> x1_x2_components = {true, true};
+    /*
+   std::vector<bool> x1_x2_components = {true, true};
     ComponentMask x1_x2_mask(x1_x2_components);
     DoFTools::make_periodicity_constraints(dof_handler, 0, 1, 0,  constraints, x1_x2_mask);*/
     //DoFTools::make_periodicity_constraints(dof_handler, 0, 1, 1,  constraints, x1_x2_mask);
@@ -435,9 +441,7 @@ namespace NeoHookean_Newton
           }
         }
       }
-    }
-    constraints.close (); */
-
+    }*/
     hanging_node_constraints.close();
 
     update_bloch_wave_constraints(1); // just use 1 for now to have correct sparsity stuff.
@@ -447,7 +451,6 @@ namespace NeoHookean_Newton
   template<int dim>
   void ElasticProblem<dim>::update_bloch_wave_constraints(unsigned int periodicity_number)
   {
-    constraints.clear();
     constraints_bloch.clear();
 
     double k_x1 = 2.0*(4.0*atan(1.0))/periodicity_number;
@@ -501,9 +504,6 @@ namespace NeoHookean_Newton
               (is_x1_comp[i] == is_x1_comp[j]) )
           {
 
-           //   constraints.add_line(i);
-           //   constraints.add_entry(i, j, 1);
-
             constraints_bloch.add_line (i);
             constraints_bloch.add_entry (i, j, cos(k_x1)); //-cos(k_x1));
             constraints_bloch.add_entry (i, (j + number_dofs) , sin(k_x1)); //-cos(k_x1));
@@ -518,9 +518,8 @@ namespace NeoHookean_Newton
       }
     }
 
-   // DoFTools::make_periodicity_constraints(dof_handler, 0, 1, 0,  constraints, x1_x2_mask);
-
-    constraints.close();
+   DoFTools::make_periodicity_constraints(dof_handler, 0, 1, 0,  constraints, x1_x2_mask);
+constraints.close();
     constraints_bloch.close();
 
   //  constraints.merge(hanging_node_constraints, ConstraintMatrix::MergeConflictBehavior::right_object_wins);
@@ -563,7 +562,7 @@ namespace NeoHookean_Newton
     system_matrix = 0.0;
     bloch_matrix = 0.0;
 
-    unsigned int number_dofs = dof_handler.n_dofs();
+    const unsigned int number_dofs = dof_handler.n_dofs();
 
     QGauss<dim>  quadrature_formula(2);
 
@@ -650,7 +649,7 @@ namespace NeoHookean_Newton
 
     constraints.condense (system_matrix);
 
- /*   std::map<types::global_dof_index,double> boundary_values;
+    std::map<types::global_dof_index,double> boundary_values;
 
     std::vector<bool> side2_components = {false, true};
     ComponentMask side2_mask(side2_components);
@@ -664,7 +663,7 @@ namespace NeoHookean_Newton
     MatrixTools::apply_boundary_values (boundary_values,
                                         system_matrix,
                                         newton_update,
-                                        system_rhs);*/
+                                        system_rhs);
 
   }
 
@@ -680,18 +679,18 @@ namespace NeoHookean_Newton
     assemble_system_matrix();
 
     constraints_bloch.condense(bloch_matrix);
+    apply_boundaries_bloch_mat(&bloch_matrix);
 
     // copy current sparse system matrix to a full matrix.
 
     LAPACKFullMatrix<double> bloch_matrix_full;
     bloch_matrix_full.copy_from(bloch_matrix);
 
-    apply_boundaries_bloch_mat(&bloch_matrix_full);
 
     Vector<double> eigenvalues;
     FullMatrix<double> eigenvectors;
 
-    bloch_matrix_full.compute_eigenvalues_symmetric(-1, 1, 1e-6, eigenvalues, eigenvectors);
+    bloch_matrix_full.compute_eigenvalues_symmetric(-1, 0.3, 1e-6, eigenvalues, eigenvectors);
     //bloch_matrix_full.compute_eigenvalues();
 
     bool positive_definite = true;
@@ -714,9 +713,9 @@ namespace NeoHookean_Newton
       outputFile << periodicity_number << std::endl;
       outputFile << std::setprecision(10) << lambda_eval << std::endl;
 /*
-      for (unsigned int i = 0; i < dof_handler.n_dofs(); i ++)
+      for (unsigned int i = 0; i < 2*dof_handler.n_dofs(); i ++)
             {
-              for(unsigned int j = 0 ; j < dof_handler.n_dofs(); j ++)
+              for(unsigned int j = 0 ; j < 2*dof_handler.n_dofs(); j ++)
               {
 
                 if (bloch_matrix.el(i,j) > 1e-13)
@@ -741,7 +740,7 @@ namespace NeoHookean_Newton
             outputFile << "\n";
             }
       outputFile.close();
-      exit(-1);*/
+      exit(-1); */
 
       outputFile << "\n";
       for (unsigned int i = 0 ; i < eigenvalues.size(); i ++) //eigenvalues.size(); i ++)
@@ -894,39 +893,7 @@ namespace NeoHookean_Newton
 
 
   template <int dim>
-  void ElasticProblem<dim>::construct_full_bloch_matrix(LAPACKFullMatrix<double> *fullMat,
-                                                        SparseMatrix<double> *K_re,
-                                                        SparseMatrix<double> *K_im)
-  {
-
-    unsigned int m = K_re->m();
-
-    fullMat->reinit(2*m + 1, 2*m + 1);
-    // loop and copy matrix elements to the full matrix as shown on the
-    // piece of scratch paper
-    for (unsigned int row = 0; row < K_re->m(); ++row)
-    {
-      const typename SparseMatrix<double>::const_iterator end_row = K_re->end(row);
-      for (typename SparseMatrix<double>::const_iterator entry = K_re->begin(row);
-                     entry != end_row; ++entry)
-      {
-        (*fullMat)(row, entry->column()) = entry->value();
-        (*fullMat)((row + m + 1), (entry->column() + m + 1)) = entry->value();
-      }
-      const typename SparseMatrix<double>::const_iterator end_row_im = K_im->end(row);
-      for (typename SparseMatrix<double>::const_iterator entry_im = K_im->begin(row);
-                     entry_im != end_row_im; ++entry_im)
-      {
-        (*fullMat)(row, (entry_im->column() + m + 1)) = -entry_im->value();
-        (*fullMat)((row + m + 1), entry_im->column()) = entry_im->value();
-      }
-
-    }
-
-  }
-
-  template <int dim>
-  void ElasticProblem<dim>::apply_boundaries_bloch_mat(LAPACKFullMatrix<double> *fullMat)
+  void ElasticProblem<dim>::apply_boundaries_bloch_mat(SparseMatrix<double> *blochMat)
   {
     const unsigned int number_dofs = dof_handler.n_dofs();
 
@@ -942,26 +909,43 @@ namespace NeoHookean_Newton
                                       boundary_2_dof_x2,
                                       boundary_id_2);
 
-    // have to zero out the rows and columns of the boundary dofs manually because
-    // because we are dealing with a matrix of twice the size
-   for (unsigned int i = 0 ; i < number_dofs; i ++) //eigenvalues.size(); i ++)
+   unsigned int m = blochMat->m();
+   // set values on the diagonal to the first diagonal element,
+   // or 1 if it is nonexistent
+   double first_nonzero_diagonal_entry = 1.0;
+   for (unsigned int i=0; i<m; ++i)
    {
-     if (boundary_2_dof_x2[i])
-     {
-       for (unsigned int j = 0 ; j < (2*dof_handler.n_dofs()); j ++) //eigenvalues.size(); i ++)
+     if (blochMat->diag_element(i) != 0.0)
        {
-         (*fullMat)(i, j) = 0.0;
-         (*fullMat)(j, i) = 0.0;
-
-         (*fullMat)(i+number_dofs, j) = 0.0;
-         (*fullMat)(j, i+number_dofs) = 0.0;
+         first_nonzero_diagonal_entry = blochMat->diag_element(i);
+         break;
        }
-       (*fullMat)(i,i) = 1.0;
-       (*fullMat)(i+number_dofs,i + number_dofs) = 1.0;
+   }
+   // now march through matrix, zeroing out rows and columns.
+   // If there is a current value on the diagonal of the constrained
+   // boundary dof, don't touch it. If there is not one, then we can
+   // just set it equal to the first nonzero entry we just found
+   for (unsigned int row = 0; row < m; ++row)
+   {
+
+     const typename SparseMatrix<double>::iterator end_row = blochMat->end(row);
+     for (typename SparseMatrix<double>::iterator entry = blochMat->begin(row);
+                    entry != end_row; ++entry)
+     {
+       if((boundary_2_dof_x2[row%number_dofs] || boundary_2_dof_x2[entry->column()%number_dofs])
+           && (row != entry->column()))
+       {
+         entry->value() = 0.0;
+       }
+       else if(boundary_2_dof_x2[row%number_dofs] && (row == entry->column()) &&
+               (blochMat->diag_element(row%number_dofs) == 0.0))
+       {
+         entry->value() = first_nonzero_diagonal_entry;
+       }
 
      }
-   }
 
+   }
 
   }
 
@@ -989,14 +973,14 @@ namespace NeoHookean_Newton
               << std::endl << std::endl;
 
     int iter = 1;
-    for (unsigned int i = 8; i < 9; i++)
+    for (unsigned int i = 10; i < 11; i++)
     {
       update_bloch_wave_constraints(i);
-      for (double lambda_eval = 0.35; lambda_eval < 0.36; lambda_eval += 0.001)
+      for (double lambda_eval = 0.355; lambda_eval < 0.36; lambda_eval += 0.001)
       {
         get_system_eigenvalues(lambda_eval, iter, i);
-        iter++;
         std::cout << iter << std::endl;
+        iter++;
       }
 
     }

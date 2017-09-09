@@ -150,10 +150,8 @@ namespace NeoHookean_Newton
                             int const maxSize, int* const endOfFileFlag);
 
     void compute_and_compare_drhs_dlambda(double epsilon, double lambda);
-    void construct_full_bloch_matrix(LAPACKFullMatrix<double> *fullMat,
-                                     SparseMatrix<double> *K_re,
-                                     SparseMatrix<double> *K_im);
-    void apply_boundaries_bloch_mat(LAPACKFullMatrix<double> *fullMat);
+
+    void apply_boundaries_bloch_mat(SparseMatrix<double> *blochMat);
 
 
     Triangulation<dim>   triangulation;
