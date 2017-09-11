@@ -981,12 +981,15 @@ constraints.close();
       valuesWritten = sscanf(nextLine, "%u %lg", &next_periodicity, &next_lambda);
       if(valuesWritten != 2)
       {
-        std::cout << "Error reading the lambda guess stuff. Exiting \n"
+        std::cout << "Error reading the lambda guess stuff. Exiting \n";
         fclose(fid_1);
         exit(-1);
       }
       lambda_guesses.push_back(next_lambda);
       periodicity_vals.push_back(next_periodicity);
+
+      getNextDataLine(fid_1, nextLine, MAXLINE, &endOfFileFlag);
+
     }
     fclose(fid_1);
   }
@@ -1035,14 +1038,14 @@ constraints.close();
               << std::endl << std::endl;
 
 
-    std::vector<double> lambda_crits (lambda_guesses.size);
+    std::vector<double> lambda_crits;
     for (unsigned int i = 0; i < periodicity_vals.size(); i++)
     {
       update_bloch_wave_constraints(periodicity_vals[i]);
       double lambda_crit = bisect_find_lambda_critical(lambda_guesses[i] - 0.05,
                                                        lambda_guesses[i] + 0.05, 1e-5, 50);
 
-
+      std::cout << periodicity_vals[i] << ":  " << lambda_crit << "\n";
       lambda_crits.push_back(lambda_crit);
 
     }
