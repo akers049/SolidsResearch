@@ -143,15 +143,19 @@ namespace NeoHookean_Newton
     void update_bloch_wave_constraints(unsigned int numBlockPeriodicity);
     void update_F0(const double lambda);
     void assemble_system_matrix();
-    bool get_system_eigenvalues(double lambda_eval, const int cycle,
-                                                         const unsigned int periodicity_number);
+    void apply_boundaries_and_constraints_system_matrix();
+    void assemble_bloch_matrix();
+    void apply_boundaries_and_constraints_bloch_matrix(SparseMatrix<double> *blochMat);
+    unsigned int get_system_eigenvalues(double lambda_eval, const int cycle,
+                                                         const unsigned int periodicity_number = 0);
+    double bisect_find_lambda_critical(double lowerBound, double upperBound,
+                                              double tol, unsigned int maxIter);
     void read_input_file(char* filename);
     void getNextDataLine( FILE* const filePtr, char* nextLinePtr,
                             int const maxSize, int* const endOfFileFlag);
 
     void compute_and_compare_drhs_dlambda(double epsilon, double lambda);
 
-    void apply_boundaries_bloch_mat(SparseMatrix<double> *blochMat);
 
 
     Triangulation<dim>   triangulation;
@@ -204,6 +208,9 @@ namespace NeoHookean_Newton
 
     NuFunction<dim> nu;
     MuFunction<dim> *mu = NULL;
+
+    std::vector<double> lambda_guesses;
+    std::vector<unsigned int> periodicity_vals;
 
     std::vector<int> matched_dofs;
 

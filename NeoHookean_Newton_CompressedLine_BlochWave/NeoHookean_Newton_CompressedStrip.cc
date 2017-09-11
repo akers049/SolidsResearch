@@ -324,6 +324,9 @@ namespace NeoHookean_Newton
                                      boundary_01_dof_x1,
                                      boundary_id_01);
 
+    std::vector<bool> x1_x2_components = {true, true};
+    ComponentMask x1_x2_mask(x1_x2_components);
+
 
 /*
     unsigned int first_boundary_dof = 0;
@@ -444,6 +447,9 @@ namespace NeoHookean_Newton
     }*/
     hanging_node_constraints.close();
 
+DoFTools::make_periodicity_constraints(dof_handler, 0, 1, 0,  constraints, x1_x2_mask);
+constraints.close();
+
     update_bloch_wave_constraints(1); // just use 1 for now to have correct sparsity stuff.
 
   }
@@ -518,8 +524,6 @@ namespace NeoHookean_Newton
       }
     }
 
-   DoFTools::make_periodicity_constraints(dof_handler, 0, 1, 0,  constraints, x1_x2_mask);
-constraints.close();
     constraints_bloch.close();
 
   //  constraints.merge(hanging_node_constraints, ConstraintMatrix::MergeConflictBehavior::right_object_wins);
@@ -561,8 +565,6 @@ constraints.close();
 
     system_matrix = 0.0;
     bloch_matrix = 0.0;
-
-    const unsigned int number_dofs = dof_handler.n_dofs();
 
     QGauss<dim>  quadrature_formula(2);
 
@@ -636,17 +638,12 @@ constraints.close();
         }
       }
     }
-    for (unsigned int row = 0; row < system_matrix.m(); ++row)
-    {
-      const typename SparseMatrix<double>::const_iterator end_row = system_matrix.end(row);
-      for (typename SparseMatrix<double>::const_iterator entry = system_matrix.begin(row);
-                             entry != end_row; ++entry)
-       {
-         bloch_matrix.set(row, entry->column(),entry->value());
-         bloch_matrix.set(row + number_dofs, entry->column() + number_dofs,entry->value());
-       }
-    }
 
+  }
+
+  template <int dim>
+  void ElasticProblem<dim>::apply_boundaries_and_constraints_system_matrix()
+  {
     constraints.condense (system_matrix);
 
     std::map<types::global_dof_index,double> boundary_values;
@@ -667,19 +664,92 @@ constraints.close();
 
   }
 
+  template <int dim>
+  void ElasticProblem<dim>::apply_boundaries_and_constraints_bloch_matrix(SparseMatrix<double> *blochMat)
+  {
+    constraints_bloch.condense(*blochMat);
+    const unsigned int number_dofs = dof_handler.n_dofs();
 
+    std::vector<bool> side2_components = {false, true};
+    ComponentMask x2_mask(side2_components);
+    std::vector<bool> boundary_2_dof_x2 (number_dofs, false);
+
+    std::set< types::boundary_id > boundary_id_2;
+    boundary_id_2.insert(2);
+
+    DoFTools::extract_boundary_dofs(dof_handler,
+                                      x2_mask,
+                                      boundary_2_dof_x2,
+                                      boundary_id_2);
+
+    unsigned int m = blochMat->m();
+    // set values on the diagonal to the first diagonal element,
+    // or 1 if it is nonexistent
+    double first_nonzero_diagonal_entry = 1.0;
+    for (unsigned int i=0; i<m; ++i)
+    {
+      if (blochMat->diag_element(i) != 0.0)
+        {
+          first_nonzero_diagonal_entry = blochMat->diag_element(i);
+          break;
+        }
+    }
+    // now march through matrix, zeroing out rows and columns.
+    // If there is a current value on the diagonal of the constrained
+    // boundary dof, don't touch it. If there is not one, then we can
+    // just set it equal to the first nonzero entry we just found
+    for (unsigned int row = 0; row < m; ++row)
+    {
+
+      const typename SparseMatrix<double>::iterator end_row = blochMat->end(row);
+      for (typename SparseMatrix<double>::iterator entry = blochMat->begin(row);
+                    entry != end_row; ++entry)
+      {
+        if((boundary_2_dof_x2[row%number_dofs] || boundary_2_dof_x2[entry->column()%number_dofs])
+            && (row != entry->column()))
+        {
+          entry->value() = 0.0;
+        }
+        else if(boundary_2_dof_x2[row%number_dofs] && (row == entry->column()) &&
+                (blochMat->diag_element(row%number_dofs) == 0.0))
+        {
+          entry->value() = first_nonzero_diagonal_entry;
+        }
+
+      }
+
+    }
+
+   }
+
+  template<int dim>
+  void ElasticProblem<dim>::assemble_bloch_matrix()
+  {
+    unsigned int number_dofs = dof_handler.n_dofs();
+    for (unsigned int row = 0; row < system_matrix.m(); ++row)
+    {
+      const typename SparseMatrix<double>::const_iterator end_row = system_matrix.end(row);
+      for (typename SparseMatrix<double>::const_iterator entry = system_matrix.begin(row);
+                             entry != end_row; ++entry)
+       {
+         bloch_matrix.set(row, entry->column(),entry->value());
+         bloch_matrix.set(row + number_dofs, entry->column() + number_dofs,entry->value());
+       }
+    }
+
+  }
 
 
   template<int dim>
-  bool ElasticProblem<dim>::get_system_eigenvalues(double lambda_eval, const int cycle,
+  unsigned int ElasticProblem<dim>::get_system_eigenvalues(double lambda_eval, const int cycle,
                                                      const unsigned int periodicity_number)
   {
 
     update_F0(lambda_eval);
     assemble_system_matrix();
+    assemble_bloch_matrix();
 
-    constraints_bloch.condense(bloch_matrix);
-    apply_boundaries_bloch_mat(&bloch_matrix);
+    apply_boundaries_and_constraints_bloch_matrix(&bloch_matrix);
 
     // copy current sparse system matrix to a full matrix.
 
@@ -693,7 +763,7 @@ constraints.close();
     bloch_matrix_full.compute_eigenvalues_symmetric(-1, 0.3, 1e-6, eigenvalues, eigenvectors);
     //bloch_matrix_full.compute_eigenvalues();
 
-    bool positive_definite = true;
+    unsigned int number_negative_eigs = 0;
     if (cycle != -1)
     {
       struct stat st;
@@ -762,10 +832,41 @@ constraints.close();
 
       outputFile.close();
     }
+    else
+    {
+      for (unsigned int i = 0 ; i < eigenvalues.size(); i ++) //eigenvalues.size(); i ++)
+      {
+        if (eigenvalues[i] < 0.0)
+          number_negative_eigs ++;
+      }
+    }
 
-    return positive_definite;
+    return number_negative_eigs;
   }
 
+  template <int dim>
+  double ElasticProblem<dim>::bisect_find_lambda_critical(double lowerBound, double upperBound,
+                                                          double tol, unsigned int maxIter)
+  {
+    unsigned int N = 1;
+    double middleVal = 0.0;
+    while ( N < maxIter)
+    {
+      middleVal = (upperBound + lowerBound)/2.0;
+
+      if ((upperBound - lowerBound)/2 < tol)
+        return middleVal;
+
+      N += 1;
+
+      if (get_system_eigenvalues(middleVal, -1) == get_system_eigenvalues(lowerBound, -1))
+        lowerBound = middleVal;
+      else
+        upperBound = middleVal;
+    }
+
+    return middleVal;
+  }
 
 
 
@@ -868,6 +969,26 @@ constraints.close();
     else
       std::cout << "Input file successfully read" << std::endl;
 
+
+
+    FILE* fid_1;
+    fid_1 = std::fopen("lambda_guesses.dat", "r");
+    double next_lambda;
+    unsigned int next_periodicity;
+    getNextDataLine(fid_1, nextLine, MAXLINE, &endOfFileFlag);
+    while (1 != endOfFileFlag)
+    {
+      valuesWritten = sscanf(nextLine, "%u %lg", &next_periodicity, &next_lambda);
+      if(valuesWritten != 2)
+      {
+        std::cout << "Error reading the lambda guess stuff. Exiting \n"
+        fclose(fid_1);
+        exit(-1);
+      }
+      lambda_guesses.push_back(next_lambda);
+      periodicity_vals.push_back(next_periodicity);
+    }
+    fclose(fid_1);
   }
 
   template <int dim>
@@ -891,65 +1012,6 @@ constraints.close();
     while ((strncmp("#", nextLinePtr, 1) == 0) || (strlen(nextLinePtr) == 0));
   }
 
-
-  template <int dim>
-  void ElasticProblem<dim>::apply_boundaries_bloch_mat(SparseMatrix<double> *blochMat)
-  {
-    const unsigned int number_dofs = dof_handler.n_dofs();
-
-    std::vector<bool> side2_components = {false, true};
-    ComponentMask x2_mask(side2_components);
-    std::vector<bool> boundary_2_dof_x2 (number_dofs, false);
-
-   std::set< types::boundary_id > boundary_id_2;
-   boundary_id_2.insert(2);
-
-   DoFTools::extract_boundary_dofs(dof_handler,
-                                      x2_mask,
-                                      boundary_2_dof_x2,
-                                      boundary_id_2);
-
-   unsigned int m = blochMat->m();
-   // set values on the diagonal to the first diagonal element,
-   // or 1 if it is nonexistent
-   double first_nonzero_diagonal_entry = 1.0;
-   for (unsigned int i=0; i<m; ++i)
-   {
-     if (blochMat->diag_element(i) != 0.0)
-       {
-         first_nonzero_diagonal_entry = blochMat->diag_element(i);
-         break;
-       }
-   }
-   // now march through matrix, zeroing out rows and columns.
-   // If there is a current value on the diagonal of the constrained
-   // boundary dof, don't touch it. If there is not one, then we can
-   // just set it equal to the first nonzero entry we just found
-   for (unsigned int row = 0; row < m; ++row)
-   {
-
-     const typename SparseMatrix<double>::iterator end_row = blochMat->end(row);
-     for (typename SparseMatrix<double>::iterator entry = blochMat->begin(row);
-                    entry != end_row; ++entry)
-     {
-       if((boundary_2_dof_x2[row%number_dofs] || boundary_2_dof_x2[entry->column()%number_dofs])
-           && (row != entry->column()))
-       {
-         entry->value() = 0.0;
-       }
-       else if(boundary_2_dof_x2[row%number_dofs] && (row == entry->column()) &&
-               (blochMat->diag_element(row%number_dofs) == 0.0))
-       {
-         entry->value() = first_nonzero_diagonal_entry;
-       }
-
-     }
-
-   }
-
-  }
-
-
   template <int dim>
   void ElasticProblem<dim>::run ()
   {
@@ -972,19 +1034,28 @@ constraints.close();
               << dof_handler.n_dofs()
               << std::endl << std::endl;
 
-    int iter = 1;
-    for (unsigned int i = 10; i < 11; i++)
+
+    std::vector<double> lambda_crits (lambda_guesses.size);
+    for (unsigned int i = 0; i < periodicity_vals.size(); i++)
     {
-      update_bloch_wave_constraints(i);
-      for (double lambda_eval = 0.355; lambda_eval < 0.36; lambda_eval += 0.001)
-      {
-        get_system_eigenvalues(lambda_eval, iter, i);
-        std::cout << iter << std::endl;
-        iter++;
-      }
+      update_bloch_wave_constraints(periodicity_vals[i]);
+      double lambda_crit = bisect_find_lambda_critical(lambda_guesses[i] - 0.05,
+                                                       lambda_guesses[i] + 0.05, 1e-5, 50);
+
+
+      lambda_crits.push_back(lambda_crit);
 
     }
+    std::string filename = "output/lambda_crits.dat";
 
+    std::ofstream outputFile;
+    outputFile.open(filename.c_str());
+
+    outputFile << "# peridoocity number    lambda_crit" << std::endl;
+    for (unsigned int i = 0 ; i < periodicity_vals.size(); i ++)
+      outputFile << periodicity_vals[i] << "     " << lambda_crits[i] << std::endl;
+
+    outputFile.close();
 
   }
 }
