@@ -199,7 +199,7 @@ namespace NeoHookean_Newton
   {
 
     // set domain dimensions
-    domain_dimensions[0] = 2.0*(4.0*atan(1.0))/critical_frequency;
+    domain_dimensions[0] = 2.0*(4.0*atan(1.0))/critical_frequency/30.0;
     domain_dimensions[1] = 1.0;
 
     // creates our strip.
@@ -263,7 +263,7 @@ namespace NeoHookean_Newton
 
     system_matrix.reinit (sparsity_pattern);
 
-    update_bloch_wave_constraints(1);
+    update_bloch_wave_constraints(0.1);
 
     setup_bloch();
 
@@ -945,6 +945,8 @@ namespace NeoHookean_Newton
   template<int dim>
   void ElasticProblem<dim>::assemble_bloch_matrix()
   {
+    bloch_matrix = 0.0;
+
     unsigned int number_dofs = dof_handler.n_dofs();
     for (unsigned int row = 0; row < system_matrix.m(); ++row)
     {
@@ -996,6 +998,7 @@ namespace NeoHookean_Newton
   void ElasticProblem<dim>::apply_boundaries_and_constraints_bloch_matrix()
   {
     constraints_bloch.condense(bloch_matrix);
+
     const unsigned int number_dofs = dof_handler.n_dofs();
 
     std::vector<bool> side2_components = {false, true};
@@ -1411,10 +1414,13 @@ namespace NeoHookean_Newton
   void ElasticProblem<dim>::get_bloch_eigenvalues(const int cycle, const int step, double wave_ratio)
   {
 
+    evaluation_point = present_solution;
+    update_F0(0.245);
     assemble_system_matrix();
     assemble_bloch_matrix();
 
     update_bloch_wave_constraints(wave_ratio);
+
     apply_boundaries_and_constraints_bloch_matrix();
 
     // copy current sparse system matrix to a full matrix.
@@ -1426,8 +1432,8 @@ namespace NeoHookean_Newton
     Vector<double> eigenvalues;
     FullMatrix<double> eigenvectors;
 
-    bloch_matrix_full.compute_eigenvalues_symmetric(-2, 0.6, 1e-6, eigenvalues, eigenvectors);
-    //bloch_matrix_full.compute_eigenvalues();
+    bloch_matrix_full.compute_eigenvalues_symmetric(-10, 0.6, 1e-6, eigenvalues, eigenvectors);
+ //   bloch_matrix_full.compute_eigenvalues(true, false);
 
 
     struct stat st;
@@ -1446,10 +1452,11 @@ namespace NeoHookean_Newton
     outputFile << step << std::endl;
     outputFile << wave_ratio << std::endl;
 
-    for (unsigned int i = 0 ; i < eigenvalues.size(); i+=1) //eigenvalues.size(); i ++)
+    for (unsigned int i = 0 ; i < eigenvalues.size(); i ++) //eigenvalues.size(); i+=1) //eigenvalues.size(); i ++)
     {
 
-     outputFile << std::setprecision(15) << eigenvalues[i] << std::endl;
+     outputFile << std::setprecision(15) <<  eigenvalues[i] << std::endl;
+//     outputFile << std::setprecision(15) <<  (bloch_matrix_full.eigenvalue(i)).real() << std::endl; //eigenvalues[i] << std::endl;
 
     }
 
@@ -1791,60 +1798,6 @@ namespace NeoHookean_Newton
     while ((strncmp("#", nextLinePtr, 1) == 0) || (strlen(nextLinePtr) == 0));
   }
 
-
-  template <int dim>
-  void ElasticProblem<dim>::compute_and_compare_drhs_dlambda(double epsilon, double lambda)
-  {
-
-    const int numberDofs = (const int) dof_handler.n_dofs();
-    update_F0(lambda);
-    Tensor <2,dim> F0_old = F0;
-    evaluation_point = present_solution;
-    assemble_system_rhs();
-    system_rhs *= -1.0;
-    Vector<double> residual = system_rhs;
-
-    assemble_drhs_dlambda(lambda);
-
-    update_F0(lambda+epsilon);
-
-    assemble_system_rhs();
-    system_rhs *= -1.0;
-
-    Vector<double> numerical_drhs(numberDofs);
-    for(int i = 0; i < numberDofs; i++)
-    {
-      numerical_drhs[i] = (system_rhs[i] - residual[i])/epsilon;
-    }
-
-    std::ofstream out("firstDeriv.dat");
-    out << ""  << std::endl;
-    out << "Residual Value              numerical"  << std::endl;
-    Vector<double> residualDifference(dof_handler.n_dofs());
-    for(unsigned int i = 0;  i < dof_handler.n_dofs(); i ++)
-      residualDifference[i] = drhs_dlambda[i] - numerical_drhs[i];
-
-    for(unsigned int i = 0; i < dof_handler.n_dofs(); i++)
-      out << drhs_dlambda[i] << "     " << numerical_drhs[i] << std::endl;
-
-    out << "\n\nL2 norm of the difference :" << residualDifference.l2_norm() << std::endl;
-    double dlambda1_dlambda, dlambda2_dlambda, a_nu;
-    dlambda1_dlambda = -1.0;
-    a_nu = (2.0*NU_VALUE/(1.0 - NU_VALUE));
-    double lambda1 = 1.0 - lambda;
-    double term1 = 2.0*a_nu*(1.0 + a_nu*lambda1*lambda1);
-    double term2 = -4.0*a_nu*a_nu*lambda1*lambda1;
-    double term3 = (2.0*a_nu*a_nu*lambda1 + 8.0*a_nu*lambda1)*(1.0 + a_nu * lambda1*lambda1)/
-                          sqrt(a_nu*a_nu*lambda1*lambda1 + 4.0 *a_nu*lambda1*lambda1 + 4.0);
-    double term4 = -sqrt(a_nu*a_nu*lambda1*lambda1 + 4.0 *a_nu*lambda1*lambda1 + 4.0)*4.0*a_nu*lambda1;
-    dlambda2_dlambda = -(term1 + term2 + term3 + term4)/(4.0*(1 + a_nu*lambda1*lambda1)*(1 + a_nu*lambda1*lambda1));
-    out << "\n\ndlambda_1: " << dlambda1_dlambda << "    " << (F0[0][0] - F0_old[0][0])/epsilon << std::endl;
-    out << "\n\ndlambda_2: " << dlambda2_dlambda << "    " << (F0[1][1] - F0_old[1][1])/epsilon << std::endl;
-
-    out.close();
-
-  }
-
   template <int dim>
   void ElasticProblem<dim>::run ()
   {
@@ -1871,9 +1824,9 @@ namespace NeoHookean_Newton
     // get the critical lambda value
     evaluation_point = present_solution;
 
-    double lambda_c =
-        bisect_find_lambda_critical(critical_lambda_analytical - 0.01,
-                                    critical_lambda_analytical + 0.01, 1e-7, 50);
+    double lambda_c = 0.2;
+       // bisect_find_lambda_critical(critical_lambda_analytical - 0.1,
+       //                             critical_lambda_analytical + 0.1, 1e-7, 50);
 
     std::cout << "The lambda_c is: " << lambda_c << std::endl;
 
@@ -1889,15 +1842,15 @@ namespace NeoHookean_Newton
     output_results (1);
 
     // set the eigenvector for the unstable mode
-    set_unstable_eigenvector(lambda_start, 1);
+    //set_unstable_eigenvector(lambda_start, 1);
 
     Vector<double> previous_solution = present_solution;
     double previous_lambda = lambda_start;
 
     present_lambda = lambda_start - 1e-7;
 
-    branch_following_PACA_iterate(present_solution, lambda_start, unstable_eigenvector, 0.0, ds);
-    output_results (2);
+   // branch_following_PACA_iterate(present_solution, lambda_start, unstable_eigenvector, 0.0, ds);
+   // output_results (2);
 
     // define variables for the tangent to next start point.
     Vector<double> solution_tangent;
@@ -1914,17 +1867,14 @@ namespace NeoHookean_Newton
 
     for(unsigned int i = 1; i < load_steps; i ++)
     {
-      for (int k = 2; k < 12; k++)
+        update_F0(0.1);
+        present_solution = 0.0;
+      for (int k = 20; k < 30; k++)
       {
         double wave_ratio = 1.0/k;
-        get_bloch_eigenvalues((i-1)*20+k, i, wave_ratio);
+        get_bloch_eigenvalues((i-1)*10+k, i, wave_ratio);
       }
-      for (int k = 2; k < 12; k++)
-      {
-        double wave_ratio = k;
-        get_bloch_eigenvalues((i-1)*20+10+k, i, wave_ratio);
-      }
-
+      exit(-1);
 
      // get the differences between past and this solution
      solution_tangent = present_solution;
@@ -1944,7 +1894,7 @@ namespace NeoHookean_Newton
 
      if ((i % output_every) == 0)
      {
-       output_results(i/output_every + 2);
+      // output_results(i/output_every + 2);
       // get_system_eigenvalues(present_lambda, i/output_every);
      }
 
