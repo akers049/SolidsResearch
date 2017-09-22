@@ -1,4 +1,5 @@
 #include "CompressedStripPacaBloch.h"
+#include "CompressedStripPacaBloch.cc"
 
 
 using namespace dealii;

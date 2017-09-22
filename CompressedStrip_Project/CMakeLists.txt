@@ -21,20 +21,33 @@ ENDIF()
 DEAL_II_INITIALIZE_CACHED_VARIABLES()
 
 
-INCLUDE_DIRECTORIES(
+ INCLUDE_DIRECTORIES(
   include
   ${CMAKE_SOURCE_DIR}/include
   )
 
-ADD_LIBRARY(CompressedStripPacaBloch source/CompressedStripPacaBloch.cc)
+
+ADD_LIBRARY(CompressedStripPacaBloch  ${CMAKE_SOURCE_DIR}/source/CompressedStripPacaBloch.cc)
 DEAL_II_SETUP_TARGET(CompressedStripPacaBloch)
+
+# ADD_EXECUTABLE(paca_to_first_bif_instability ${CMAKE_SOURCE_DIR}/source/paca_to_first_bif_instability.cc $<TARGET_OBJECTS:CompressedStripPacaBloch>)
 
 ADD_EXECUTABLE(paca_to_first_bif_instability ${CMAKE_SOURCE_DIR}/source/paca_to_first_bif_instability.cc)
 DEAL_II_SETUP_TARGET(paca_to_first_bif_instability)
 TARGET_LINK_LIBRARIES(paca_to_first_bif_instability CompressedStripPacaBloch)
 
+
 ADD_EXECUTABLE(paca_continue ${CMAKE_SOURCE_DIR}/source/paca_continue.cc)
 DEAL_II_SETUP_TARGET(paca_continue)
 TARGET_LINK_LIBRARIES(paca_continue CompressedStripPacaBloch)
+
+
+# Define a distclean target to remove every generated file:
+ADD_CUSTOM_TARGET(distclean
+  COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target clean
+  COMMAND ${CMAKE_COMMAND} -E remove_directory CMakeFiles
+  COMMAND ${CMAKE_COMMAND} -E remove CMakeCache.txt cmake_install.cmake Makefile
+  COMMENT "distclean invoked"
+  )
 
 

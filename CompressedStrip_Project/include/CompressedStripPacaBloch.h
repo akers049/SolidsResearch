@@ -58,6 +58,8 @@
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
 
+#define MAXLINE 1024
+
 namespace NeoHookean_Newton
 {
   using namespace dealii;
@@ -135,16 +137,21 @@ namespace NeoHookean_Newton
 
     void create_mesh();
     void setup_system ();
+
+    void assemble_system_energy_and_congugate_lambda(double lambda_eval);
+
     void update_bloch_wave_constraints(double wave_ratio);
 
     void update_F0(const double lambda);
     void add_small_pertubations(double amplitude, bool firstTime);
 
+    void newton_iterate();
+
     void branch_following_PACA_iterate(Vector<double> previousSolution, double preivousLambda,
                                          Vector<double> solVectorGuess,
                                          double lambdaGuess, double ds);
 
-    bool get_system_eigenvalues(double lambda_eval, const int cycle);
+    unsigned int get_system_eigenvalues(double lambda_eval, const int cycle);
     void get_bloch_eigenvalues(const int cycle, const int step, double wave_ratio);
     void set_unstable_eigenvector(double lambda_eval, unsigned int index);
 
@@ -156,15 +163,25 @@ namespace NeoHookean_Newton
                          std::vector<double> congugate_lambda_values,
                          std::vector<double> displacement_magnitude)  const;
 
+    void read_input_file(char* filename);
+
     void save_current_state(char* output_dir);
 
     void load_state(char* state_dir);
 
-    double               present_lambda = 0.0;
+    // get methods for important constants
+    double get_present_lambda(){return present_lambda;};
+    double get_ds(){return ds;};
+    unsigned int get_output_every(){return output_every;};
+    unsigned int get_load_steps(){return load_steps;};
+    unsigned int get_n_dofs(){return dof_handler.n_dofs();};
+    unsigned int get_number_active_cells(){return triangulation.n_active_cells();};
 
     Vector<double>       present_solution;
     Vector<double>       evaluation_point;
     Vector<double>       unstable_eigenvector;
+
+    double               present_lambda = 0.0;
 
     double               system_energy = 0.0;
     double               congugate_lambda = 0.0;
@@ -190,7 +207,6 @@ namespace NeoHookean_Newton
 
     void assemble_system_matrix();
     void assemble_system_rhs();
-    void assemble_system_energy_and_congugate_lambda(double lambda_eval);
     void assemble_drhs_dlambda(double lambda_eval);
     void assemble_bloch_matrix();
 
@@ -198,7 +214,6 @@ namespace NeoHookean_Newton
     void apply_boundaries_to_rhs(Vector<double> *rhs, std::vector<bool> homogenous_dirichlet_dofs);
     void apply_boundaries_and_constraints_bloch_matrix();
 
-    void newton_iterate();
 
     void line_search_and_add_step_length(double current_residual, std::vector<bool> homogenous_dirichlet_dofs);
 
@@ -207,7 +222,6 @@ namespace NeoHookean_Newton
     void solve();
     void solve_boarder_matrix_system();
 
-    void read_input_file(char* filename);
     void getNextDataLine( FILE* const filePtr, char* nextLinePtr,
                             int const maxSize, int* const endOfFileFlag);
 
@@ -240,7 +254,6 @@ namespace NeoHookean_Newton
 
     Tensor<2,dim>        F0;
 
-
     std::vector<unsigned int>  grid_dimensions;
     std::vector<double> domain_dimensions;
     double tol = 0.0;
@@ -258,6 +271,5 @@ namespace NeoHookean_Newton
 
   };
 }
-
 
 #endif /* NEOHOOKEAN_NEWTON_COMPRESSEDSTRIP_H_ */

@@ -10,6 +10,8 @@
  * Author: Andrew Akerson
  */
 
+#ifndef COMPRESSEDSTRIPPACABLOCH_CC_
+#define COMPRESSEDSTRIPPACABLOCH_CC_
 #include "CompressedStripPacaBloch.h"
 
 #include <fstream>
@@ -19,7 +21,7 @@
 #include <sys/stat.h>
 
 
-#define MAXLINE 1024
+
 #define MU_VALUE 1.0
 #define NU_VALUE 0.33
 
@@ -199,7 +201,7 @@ namespace NeoHookean_Newton
   {
 
     // set domain dimensions
-    domain_dimensions[0] = 5.0*2.0*(4.0*atan(1.0))/critical_frequency;
+    domain_dimensions[0] = 3.0*2.0*(4.0*atan(1.0))/critical_frequency;
     domain_dimensions[1] = 1.0;
 
     // creates our strip.
@@ -210,7 +212,7 @@ namespace NeoHookean_Newton
     corner2(1) =  domain_dimensions[1];
     GridGenerator::subdivided_hyper_rectangle (triangulation, grid_dimensions, corner1, corner2, true);
 
-/*
+
     // Now we will refine this mesh
     const int numSections = 2;
     for (int i = 0 ; i < numSections; i ++)
@@ -233,7 +235,7 @@ namespace NeoHookean_Newton
           }
       }
       triangulation.execute_coarsening_and_refinement ();
-    }*/
+    }
   }
 
   template <int dim>
@@ -269,6 +271,8 @@ namespace NeoHookean_Newton
     update_bloch_wave_constraints(0.1);
 
     setup_bloch();
+
+    evaluation_point = present_solution;
 
   }
 
@@ -373,7 +377,7 @@ namespace NeoHookean_Newton
           for (unsigned int j = 0; j < number_dofs; j++)
           {
             if (is_x2_comp[j] && (fabs(x1_coord + support_points[j](0)) < 1e-12 ) &&
-                                  (fabs(x2_coord - support_points[j](1)) < 1e-12))
+                                  (fabs(x2_coord - support_points[j](1)) < 1e-12) && i != j)
             {
               constraints.add_line (i);
               constraints.add_entry (i, j, 1);
@@ -402,7 +406,7 @@ namespace NeoHookean_Newton
           for (unsigned int j = 0; j < number_dofs; j++)
           {
             if ((!is_x2_comp[j]) && (fabs(x1_coord + support_points[j](0)) < 1e-12 ) &&
-                                  (fabs(x2_coord - support_points[j](1)) < 1e-12))
+                                  (fabs(x2_coord - support_points[j](1)) < 1e-12) && i != j)
             {
               constraints.add_line (i);
               constraints.add_entry (i, j, -1);
@@ -1351,7 +1355,7 @@ namespace NeoHookean_Newton
   }
 
   template<int dim>
-  bool ElasticProblem<dim>::get_system_eigenvalues(double lambda_eval, const int cycle)
+  unsigned int ElasticProblem<dim>::get_system_eigenvalues(double lambda_eval, const int cycle)
   {
 
     update_F0(lambda_eval);
@@ -1368,7 +1372,7 @@ namespace NeoHookean_Newton
     system_matrix_full.compute_eigenvalues_symmetric(-0.3, 0.3, 1e-6, eigenvalues, eigenvectors);
 
 
-    bool positive_definite = true;
+    unsigned int num_neg_eigs = 0;
     if (cycle != -1)
     {
       std::ostringstream cycle_str;
@@ -1390,12 +1394,12 @@ namespace NeoHookean_Newton
 
         if (nextEigenVal < 0.0)
         {
-          positive_definite = false;
+          num_neg_eigs ++;
         }
 
       }
 
-      outputFile << "\nIs positive definite : " << positive_definite << std::endl;
+      outputFile << "\nIs positive definite : " << num_neg_eigs << std::endl;
       outputFile.close();
     }
     else
@@ -1404,13 +1408,13 @@ namespace NeoHookean_Newton
       {
         if (eigenvalues[i] < 0.0)
         {
-          positive_definite = false;
+          num_neg_eigs ++;
           break;
         }
       }
     }
 
-    return positive_definite;
+    return num_neg_eigs;
   }
 
   template<int dim>
@@ -1471,6 +1475,7 @@ namespace NeoHookean_Newton
   void ElasticProblem<dim>::set_unstable_eigenvector(double lambda_eval, unsigned int index)
   {
     update_F0(lambda_eval);
+    evaluation_point = present_solution;
     assemble_system_matrix();
     apply_boundaries_and_constraints_system_matrix();
 
@@ -1522,7 +1527,7 @@ namespace NeoHookean_Newton
 
       N += 1;
 
-      if (get_system_eigenvalues(middleVal, -1) && get_system_eigenvalues(lowerBound, -1))
+      if (get_system_eigenvalues(middleVal, -1) == get_system_eigenvalues(lowerBound, -1))
         lowerBound = middleVal;
       else
         upperBound = middleVal;
@@ -1892,4 +1897,4 @@ namespace NeoHookean_Newton
   }
 }
 
-
+#endif // COMPRESSEDSTRIPPACABLOCH_CC_
