@@ -41,6 +41,10 @@ ADD_EXECUTABLE(paca_continue ${CMAKE_SOURCE_DIR}/source/paca_continue.cc)
 DEAL_II_SETUP_TARGET(paca_continue)
 TARGET_LINK_LIBRARIES(paca_continue CompressedStripPacaBloch)
 
+ADD_EXECUTABLE(bloch_eigs_first_bif ${CMAKE_SOURCE_DIR}/source/bloch_eigs_first_bif.cc)
+DEAL_II_SETUP_TARGET(bloch_eigs_first_bif)
+TARGET_LINK_LIBRARIES(bloch_eigs_first_bif CompressedStripPacaBloch)
+
 
 # Define a distclean target to remove every generated file:
 ADD_CUSTOM_TARGET(distclean

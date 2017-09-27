@@ -53,7 +53,7 @@ int main ()
 
   ep.present_lambda = lambda_start - 1e-7;
 
-  ep.branch_following_PACA_iterate(ep.present_solution, lambda_start,
+  ep.path_follow_PACA_iterate(ep.present_solution, lambda_start,
                           ep.unstable_eigenvector, 0.0, ep.get_ds());
   ep.output_results (2);
 
@@ -90,12 +90,12 @@ int main ()
    previous_lambda = ep.present_lambda;
    previous_solution = ep.present_solution;
 
-   ep.branch_following_PACA_iterate(ep.present_solution, ep.present_lambda, solution_tangent, lambda_tangent, ep.get_ds());
+   ep.path_follow_PACA_iterate(ep.present_solution, ep.present_lambda, solution_tangent, lambda_tangent, ep.get_ds());
    std::cout << std::setprecision(15) << "    lambda = " << ep.present_lambda << std::endl;
 
    if ((i % ep.get_output_every()) == 0)
    {
-     ep.output_results(i/ep.get_output_every() + 2);
+      ep.output_results(i/ep.get_output_every() + 2);
     // get_system_eigenvalues(present_lambda, i/output_every);
    }
 
@@ -107,21 +107,20 @@ int main ()
    displacement_magnitude.push_back(ep.present_solution.l2_norm());
 
    prev_num_negative_eigs = num_negative_eigs;
-   num_negative_eigs = ep.get_system_eigenvalues(ep.present_lambda, -1);
-   if (i != 1 && prev_num_negative_eigs != num_negative_eigs)
+   num_negative_eigs = ep.get_system_eigenvalues(ep.present_lambda, i);
+   std::cout << "    Number negative Eigenvalues : " << num_negative_eigs << std::endl;
+   if (i > 300 && num_negative_eigs == (prev_num_negative_eigs + 1))
    {
      std::cout << "\n Eigenvalue Crossing Found. Outputting current state and stopping" << std::endl;
      break;
    }
 
   }
-  ep.output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude);
+  // ep.output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude, 3);
 
   ep.set_unstable_eigenvector(ep.present_lambda, 2);
 
-  char saved_states_dir[MAXLINE];
-  strcpy(saved_states_dir, "saved-states");
-  ep.save_current_state(saved_states_dir);
+  ep.save_current_state();
 
   return 0;
 }

@@ -1,0 +1,123 @@
+/*
+ * bloch_eigs_first_bif.cc
+ *
+ *  Created on: Sep 27, 2017
+ *      Author: andrew
+ */
+
+#include "CompressedStripPacaBloch.h"
+#include "CompressedStripPacaBloch.cc"
+
+
+using namespace dealii;
+int main ()
+{
+
+  NeoHookean_Newton::ElasticProblem<2> ep;
+
+  char fileName[MAXLINE];
+  std::cout << "Please enter an input file: " << std::endl;
+  std::cin >> fileName;
+  ep.read_input_file(fileName);
+
+  ep.create_mesh();
+
+  ep.setup_system();
+
+  std::cout << "\n   Number of active cells:       "
+            << ep.get_number_active_cells()
+            << std::endl;
+
+
+  std::cout << "   Number of degrees of freedom: "
+            << ep.get_n_dofs()
+            << std::endl << std::endl;
+
+
+  // get the critical lambda value
+  ep.evaluation_point = ep.present_solution;
+
+  double lambda_c = ep.bisect_find_lambda_critical(ep.critical_lambda_analytical - 0.1,
+                                               ep.critical_lambda_analytical + 0.1, 1e-7, 50);
+
+  std::cout << "The lambda_c is: " << lambda_c << std::endl;
+
+  ep.update_F0(0);
+  ep.newton_iterate();
+  ep.output_results (0);
+  ep.assemble_system_energy_and_congugate_lambda(0.0);
+
+
+  double lambda_start = lambda_c + 1e-7;
+  ep.update_F0(lambda_start);
+  ep.newton_iterate();
+  ep.output_results (1);
+
+  // set the eigenvector for the unstable mode
+  ep.set_unstable_eigenvector(lambda_start, 1);
+
+  Vector<double> previous_solution = ep.present_solution;
+  double previous_lambda = lambda_start;
+
+  ep.present_lambda = lambda_start - 1e-7;
+
+  ep.path_follow_PACA_iterate(ep.present_solution, lambda_start, ep.unstable_eigenvector, 0.0, ep.ds);
+  ep.output_results (2);
+
+  // define variables for the tangent to next start point.
+  Vector<double> solution_tangent;
+  double lambda_tangent;
+  double scalingVal;
+
+  std::vector<double> lambda_values(ep.load_steps);
+  std::vector<double> congugate_lambda_values(ep.load_steps);
+  std::vector<double> energy_values(ep.load_steps);
+  std::vector<double> displacement_magnitude(ep.load_steps);
+  lambda_values[0] = 0.0;
+  congugate_lambda_values[0] = ep.congugate_lambda;
+  energy_values[0] = ep.system_energy;
+
+
+  for(unsigned int i = 1; i < ep.load_steps; i ++)
+  {
+    if(i%20 == 0)
+    {
+      for(unsigned int j = 0; j < 101; j++)
+      {
+        double wave_ratio = j*0.005;
+        ep.get_bloch_eigenvalues(j, i/20, wave_ratio);
+      }
+    }
+
+
+
+   // get the differences between past and this solution
+   solution_tangent = ep.present_solution;
+   solution_tangent -= previous_solution;
+   lambda_tangent = ep.present_lambda - previous_lambda;
+
+   // now scale to length 1.0
+   scalingVal = 1.0/ep.ds;
+   solution_tangent *= scalingVal;
+   lambda_tangent *= scalingVal;
+
+   previous_lambda = ep.present_lambda;
+   previous_solution = ep.present_solution;
+
+   ep.path_follow_PACA_iterate(ep.present_solution, ep.present_lambda, solution_tangent, lambda_tangent, ep.ds);
+   std::cout << std::setprecision(15) << "    lambda = " << ep.present_lambda << std::endl;
+
+   // get energy and congugate lambda value and save them.
+   ep.assemble_system_energy_and_congugate_lambda(ep.present_lambda);
+   lambda_values[i] = ep.present_lambda;
+   congugate_lambda_values[i] = ep.congugate_lambda;
+   energy_values[i] = ep.system_energy;
+   displacement_magnitude[i] = ep.present_solution.l2_norm();
+
+  }
+  ep.output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude, 1);
+}
+
+
+
+

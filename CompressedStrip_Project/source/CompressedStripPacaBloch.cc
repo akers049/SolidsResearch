@@ -16,6 +16,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <string>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -201,7 +202,7 @@ namespace NeoHookean_Newton
   {
 
     // set domain dimensions
-    domain_dimensions[0] = 3.0*2.0*(4.0*atan(1.0))/critical_frequency;
+    domain_dimensions[0] = number_unit_cells*2.0*(4.0*atan(1.0))/critical_frequency;
     domain_dimensions[1] = 1.0;
 
     // creates our strip.
@@ -213,6 +214,7 @@ namespace NeoHookean_Newton
     GridGenerator::subdivided_hyper_rectangle (triangulation, grid_dimensions, corner1, corner2, true);
 
 
+    /*
     // Now we will refine this mesh
     const int numSections = 2;
     for (int i = 0 ; i < numSections; i ++)
@@ -235,7 +237,7 @@ namespace NeoHookean_Newton
           }
       }
       triangulation.execute_coarsening_and_refinement ();
-    }
+    }*/
   }
 
   template <int dim>
@@ -1120,7 +1122,7 @@ namespace NeoHookean_Newton
   }
 
   template<int dim>
-  void ElasticProblem<dim>::branch_following_PACA_iterate(Vector<double> previousSolution, double previousLambda,
+  void ElasticProblem<dim>::path_follow_PACA_iterate(Vector<double> previousSolution, double previousLambda,
                                                           Vector<double> solVectorDir,
                                                           double lambdaDir, double ds)
   {
@@ -1359,6 +1361,7 @@ namespace NeoHookean_Newton
   {
 
     update_F0(lambda_eval);
+    evaluation_point = present_solution;
     assemble_system_matrix();
     apply_boundaries_and_constraints_system_matrix();
 
@@ -1369,22 +1372,27 @@ namespace NeoHookean_Newton
     Vector<double> eigenvalues;
     FullMatrix<double> eigenvectors;
 
-    system_matrix_full.compute_eigenvalues_symmetric(-0.3, 0.3, 1e-6, eigenvalues, eigenvectors);
+    system_matrix_full.compute_eigenvalues_symmetric(-10, 0.3, 1e-6, eigenvalues, eigenvectors);
 
 
     unsigned int num_neg_eigs = 0;
     if (cycle != -1)
     {
-      std::ostringstream cycle_str;
-      cycle_str << cycle;
+      std::string filename(output_directory);
+          filename += "/eigenvalues";
 
-      std::string filename = "output/eigenvalues-";
-      filename += cycle_str.str();
+      // see if the directory exists
+      struct stat st;
+      if (stat(filename.c_str(), &st) == -1)
+        mkdir(filename.c_str(), 0700);
+
+      filename += "/eigenvalues-";
+      filename += std::to_string(cycle);
 
       std::ofstream outputFile;
       outputFile.open(filename.c_str());
 
-      outputFile << "# eigenvalues of the system matrix" << std::endl;
+      //outputFile << "# eigenvalues of the system matrix" << std::endl;
 
       for (unsigned int i = 0 ; i < eigenvalues.size(); i ++)
       {
@@ -1399,7 +1407,7 @@ namespace NeoHookean_Newton
 
       }
 
-      outputFile << "\nIs positive definite : " << num_neg_eigs << std::endl;
+      // outputFile << "\nIs positive definite : " << num_neg_eigs << std::endl;
       outputFile.close();
     }
     else
@@ -1443,15 +1451,19 @@ namespace NeoHookean_Newton
  //   bloch_matrix_full.compute_eigenvalues(true, false);
 
 
+
+    std::string filename(output_directory);
+    filename += "/bloch_eigenvalues";
+
+    // see if the directory exists
     struct stat st;
-    if (stat("./output", &st) == -1)
-       mkdir("./output", 0700);
+    if (stat(filename.c_str(), &st) == -1)
+      mkdir(filename.c_str(), 0700);
 
-    std::ostringstream cycle_str;
-    cycle_str << cycle;
-
-    std::string filename = "output/eigenvalues-";
-    filename += cycle_str.str();
+    filename += "/bloch_eigenvalues-";
+    filename += std::to_string(step);
+    filename += "-";
+    filename += std::to_string(cycle);
 
     std::ofstream outputFile;
     outputFile.open(filename.c_str());
@@ -1540,9 +1552,6 @@ namespace NeoHookean_Newton
   void ElasticProblem<dim>::output_results (const unsigned int cycle) const
   {
 
-    std::ostringstream cycle_str;
-    cycle_str << cycle;
-
     std::vector<std::string> solution_names;
     switch (dim)
       {
@@ -1563,14 +1572,18 @@ namespace NeoHookean_Newton
         break;
       }
 
-    // See if the output file exists. If not, make the directory.
-    struct stat st;
-    if (stat("./output", &st) == -1)
-        mkdir("./output", 0700);
-
     // output the total displacements. this requires adding in the uniform solution on top of the displacements
-    std::string filename0 = "output/total_displacement-";
-    filename0 += cycle_str.str();
+
+    std::string filename0(output_directory);
+    filename0 += "/total_displacement";
+
+    // see if the directory exists...
+    struct stat st;
+    if (stat(filename0.c_str(), &st) == -1)
+      mkdir(filename0.c_str(), 0700);
+
+    filename0 += "/total_displacement-";
+    filename0 += std::to_string(cycle);
 
     filename0 += ".vtk";
     std::ofstream output_totalDisp (filename0.c_str());
@@ -1618,9 +1631,15 @@ namespace NeoHookean_Newton
 
     // Now output the displacements from uniform solution
 
-    std::string filename1 = "output/displacement_from_uniform-";
-    filename1 += cycle_str.str();
+    std::string filename1(output_directory);
+    filename1 += "/displacement_from_uniform";
 
+    // see if the directory exists...
+    if (stat(filename1.c_str(), &st) == -1)
+      mkdir(filename1.c_str(), 0700);
+
+    filename1 += "/displacement_from_uniform-";
+    filename1 += std::to_string(cycle);
     filename1 += ".vtk";
     std::ofstream output_disp_from_uniform (filename1.c_str());
 
@@ -1644,8 +1663,13 @@ namespace NeoHookean_Newton
     MappingQEulerian<dim> q_mapping(1,  dof_handler, shifted_solution);
     deformed_data_out.build_patches(q_mapping, 1);
 
-    std::string filename2 = "output/deformed_mesh-";
-    filename2 += cycle_str.str();
+    std::string filename2(output_directory);
+    filename2 += "/deformed_mesh";
+    // see if the directory exists...
+    if (stat(filename2.c_str(), &st) == -1)
+      mkdir(filename2.c_str(), 0700);
+    filename2 += "/deformed_mesh-";
+    filename2 += std::to_string(cycle);
     filename2 += ".vtk";
     std::ofstream output_deformed_mesh(filename2.c_str());
     deformed_data_out.write_vtk(output_deformed_mesh);
@@ -1657,16 +1681,16 @@ namespace NeoHookean_Newton
   void ElasticProblem<dim>::output_load_info(std::vector<double> lambda_values,
                                              std::vector<double> energy_values,
                                              std::vector<double> congugate_lambda_values,
-                                             std::vector<double> displacement_magnitude) const
+                                             std::vector<double> displacement_magnitude,
+                                             const unsigned int cycle) const
   {
 
-    // see if output directory exists, if not create it
-    struct stat st;
-    if (stat("./output", &st) == -1)
-        mkdir("./output", 0700);
-
     // output the lambda value, system energy, and the congugate lambda vales for each step
-    std::string filename = "output/load_info.txt";
+
+    std::string filename(output_directory);
+    filename += "/load_info";
+    filename += std::to_string(cycle);
+    filename += ".txt";
     std::ofstream load_data_output;
     load_data_output.open(filename.c_str());
     load_data_output << "# lambda";
@@ -1705,6 +1729,34 @@ namespace NeoHookean_Newton
     }
     else
     {
+      // Read in the output name
+      char directory_name[MAXLINE];
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%s", directory_name);
+      if (valuesWritten != 1)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+
+      // Read in the number of unit cells
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%u", &number_unit_cells);
+      if (valuesWritten != 1)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+
+      // append the number of unit cells used to the directory name
+      char num_cells_str[MAXLINE];
+      sprintf(num_cells_str, "%u", number_unit_cells);
+      strcat(directory_name, "_");
+      strcat(directory_name, num_cells_str);
+
+      sprintf(output_directory, "output/");
+      strcat(output_directory, directory_name);
+
       // Read in the grid dimensions
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
       valuesWritten = sscanf(nextLine, "%u %u", &grid_dimensions[0], &grid_dimensions[1]);
@@ -1713,6 +1765,7 @@ namespace NeoHookean_Newton
         fileReadErrorFlag = true;
         goto fileClose;
       }
+      grid_dimensions[0] *= number_unit_cells;
 
       // read in the absolute tolerance of newton iteration
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
@@ -1783,6 +1836,14 @@ namespace NeoHookean_Newton
     else
       std::cout << "Input file successfully read" << std::endl;
 
+    // make the output directory
+    struct stat st;
+    if (stat("./output", &st) == -1)
+       mkdir("./output", 0700);
+
+    if (stat(output_directory, &st) == -1)
+      mkdir(output_directory, 0700);
+
   }
 
   template <int dim>
@@ -1807,22 +1868,25 @@ namespace NeoHookean_Newton
   }
 
   template <int dim>
-  void ElasticProblem<dim>::save_current_state(char* output_dir)
+  void ElasticProblem<dim>::save_current_state()
   {
-    // create the output directory
+    // create the output directory if it doesnt exist
 
-    char output_dir_path[MAXLINE];
-    strcpy(output_dir_path, "./");
-    strcat(output_dir_path, output_dir);
+
+    char saved_state_dir[MAXLINE];
+    strcpy(saved_state_dir, output_directory);
+    strcat(saved_state_dir, "/saved_state");
+
+    // see if the directory exists
     struct stat st;
-    if (stat(output_dir_path, &st) == -1)
-        mkdir(output_dir_path, 0700);
+    if (stat(saved_state_dir, &st) == -1)
+         mkdir(saved_state_dir, 0700);
+
 
     // write the mesh
     char mesh_file[MAXLINE];
-    strcpy(mesh_file, output_dir_path);
-    strcat(mesh_file, "/");
-    strcat(mesh_file, "mesh.msh");
+    strcpy(mesh_file, saved_state_dir);
+    strcat(mesh_file, "/mesh.msh");
     std::ofstream mesh_out (mesh_file);
     GridOut grid_out;
     grid_out.set_flags(GridOutFlags::Msh (true, true));
@@ -1830,21 +1894,26 @@ namespace NeoHookean_Newton
 
     // Present Solution
     char present_solution_file[MAXLINE];
-    strcpy(present_solution_file, output_dir_path);
-    strcat(present_solution_file, "/");
-    strcat(present_solution_file, "present_solution.dat");
+    strcpy(present_solution_file, saved_state_dir);
+    strcat(present_solution_file, "/present_solution.dat");
     std::ofstream solution_out (present_solution_file);
     boost::archive::text_oarchive solution_ar(solution_out);
     present_solution.save(solution_ar, 1);
 
     // unstable eigenvector
     char unstable_eigenvector_file[MAXLINE];
-    strcpy(unstable_eigenvector_file, output_dir_path);
-    strcat(unstable_eigenvector_file, "/");
-    strcat(unstable_eigenvector_file, "unstable_eigenvector.dat");
+    strcpy(unstable_eigenvector_file, saved_state_dir);
+    strcat(unstable_eigenvector_file, "/unstable_eigenvector.dat");
     std::ofstream eigenvector_out(unstable_eigenvector_file);
     boost::archive::text_oarchive eigenvector_ar(eigenvector_out);
     unstable_eigenvector.save(eigenvector_ar, 1);
+
+    char lambda_file[MAXLINE];
+    strcpy(lambda_file, saved_state_dir);
+    strcat(lambda_file, "/present_lambda.dat");
+    std::ofstream lambda_out(lambda_file);
+    lambda_out << present_lambda;
+    lambda_out.close();
 
 
 
@@ -1852,13 +1921,13 @@ namespace NeoHookean_Newton
   }
 
   template <int dim>
-  void ElasticProblem<dim>::load_state(char* input_dir)
+  void ElasticProblem<dim>::load_state()
   {
     // create the output directory
 
     char input_dir_path[MAXLINE];
-    strcpy(input_dir_path, "./");
-    strcat(input_dir_path, input_dir);
+    strcpy(input_dir_path, output_directory);
+    strcat(input_dir_path, "/saved_state");
     struct stat st;
     if (stat(input_dir_path, &st) == -1)
     {
@@ -1869,8 +1938,7 @@ namespace NeoHookean_Newton
     // load the mesh
     char mesh_file[MAXLINE];
     strcpy(mesh_file, input_dir_path);
-    strcat(mesh_file, "/");
-    strcat(mesh_file, "mesh.msh");
+    strcat(mesh_file, "/mesh.msh");
     std::ifstream mesh_in (mesh_file);
     GridIn<2> grid_in;
     grid_in.attach_triangulation(triangulation);
@@ -1879,8 +1947,7 @@ namespace NeoHookean_Newton
     // Present Solution
     char present_solution_file[MAXLINE];
     strcpy(present_solution_file, input_dir_path);
-    strcat(present_solution_file, "/");
-    strcat(present_solution_file, "present_solution.dat");
+    strcat(present_solution_file, "/present_solution.dat");
     std::ifstream solution_in (present_solution_file);
     boost::archive::text_iarchive solution_ar(solution_in);
     present_solution.load(solution_ar, 1);
@@ -1888,11 +1955,26 @@ namespace NeoHookean_Newton
     // unstable eigenvector
     char unstable_eigenvector_file[MAXLINE];
     strcpy(unstable_eigenvector_file, input_dir_path);
-    strcat(unstable_eigenvector_file, "/");
-    strcat(unstable_eigenvector_file, "unstable_eigenvector.dat");
+    strcat(unstable_eigenvector_file, "/unstable_eigenvector.dat");
     std::ifstream eigenvector_in(unstable_eigenvector_file);
     boost::archive::text_iarchive eigenvector_ar(eigenvector_in);
     unstable_eigenvector.load(eigenvector_ar, 1);
+
+    char lambda_file[MAXLINE];
+    strcpy(lambda_file, input_dir_path);
+    strcat(lambda_file, "/present_lambda.dat");
+    std::ifstream lambda_in(lambda_file);
+    if (!lambda_in)
+    {
+      std::cout << "Error reading file: " << lambda_file << " . Exiting." << std::endl;
+      exit(-1);
+    }
+
+    lambda_in >> present_lambda;
+    lambda_in.close();
+
+
+
 
   }
 }
