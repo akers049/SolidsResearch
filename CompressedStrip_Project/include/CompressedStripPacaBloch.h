@@ -147,7 +147,7 @@ namespace NeoHookean_Newton
 
     void newton_iterate();
 
-    void branch_following_PACA_iterate(Vector<double> previousSolution, double preivousLambda,
+    void path_follow_PACA_iterate(Vector<double> previousSolution, double preivousLambda,
                                          Vector<double> solVectorGuess,
                                          double lambdaGuess, double ds);
 
@@ -161,13 +161,14 @@ namespace NeoHookean_Newton
     void output_load_info(std::vector<double> lambda_values,
                          std::vector<double> energy_values,
                          std::vector<double> congugate_lambda_values,
-                         std::vector<double> displacement_magnitude)  const;
+                         std::vector<double> displacement_magnitude,
+                         const unsigned int cycle)  const;
 
     void read_input_file(char* filename);
 
-    void save_current_state(char* output_dir);
+    void save_current_state();
 
-    void load_state(char* state_dir);
+    void load_state();
 
     // get methods for important constants
     double get_present_lambda(){return present_lambda;};
@@ -176,6 +177,7 @@ namespace NeoHookean_Newton
     unsigned int get_load_steps(){return load_steps;};
     unsigned int get_n_dofs(){return dof_handler.n_dofs();};
     unsigned int get_number_active_cells(){return triangulation.n_active_cells();};
+    unsigned int get_number_unit_cells(){return number_unit_cells;};
 
     Vector<double>       present_solution;
     Vector<double>       evaluation_point;
@@ -263,6 +265,9 @@ namespace NeoHookean_Newton
     double ds = 0.0;
     unsigned int load_steps = 0;
     unsigned int output_every = 0;
+    unsigned int number_unit_cells = 1.0;
+
+    char output_directory[MAXLINE];
 
     NuFunction<dim> nu;
     MuFunction<dim> *mu = NULL;

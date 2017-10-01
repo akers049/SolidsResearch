@@ -28,14 +28,13 @@ int main ()
             << std::endl << std::endl;
 
   Vector<double> previous_solution = ep.present_solution;
-  double lambda_start = 0.364731946335432 ;
-  double previous_lambda = lambda_start;
+  double previous_lambda = ep.present_lambda;
 
   double lambda_tangent = 0.0;
   double scalingVal = sqrt(1 - lambda_tangent*lambda_tangent);
   ep.unstable_eigenvector *= scalingVal;
 
-  ep.path_follow_PACA_iterate(ep.present_solution, lambda_start,
+  ep.path_follow_PACA_iterate(ep.present_solution, ep.present_lambda,
                           ep.unstable_eigenvector, 0.0, ep.get_ds());
 
 
@@ -72,12 +71,13 @@ int main ()
     // get_system_eigenvalues(present_lambda, i/output_every);
    }
 
-   // get energy and congugate lambda value and save them.
+   // get energy and congugate lambda value and save them. Make sure to scale by number
+   // of unit cells...
    ep.assemble_system_energy_and_congugate_lambda(ep.present_lambda);
    lambda_values.push_back(ep.present_lambda);
-   congugate_lambda_values.push_back(ep.congugate_lambda);
-   energy_values.push_back(ep.system_energy);
-   displacement_magnitude.push_back(ep.present_solution.l2_norm());
+   congugate_lambda_values.push_back(ep.congugate_lambda/ep.get_number_active_cells());
+   energy_values.push_back(ep.system_energy/ep.get_number_active_cells());
+   displacement_magnitude.push_back(ep.present_solution.l2_norm()/ep.get_number_active_cells());
 
 
   }

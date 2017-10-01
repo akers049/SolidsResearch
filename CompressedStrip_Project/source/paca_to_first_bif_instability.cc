@@ -51,7 +51,7 @@ int main ()
   Vector<double> previous_solution = ep.present_solution;
   double previous_lambda = lambda_start;
 
-  ep.present_lambda = lambda_start - 1e-7;
+  ep.present_lambda = lambda_start - 1e-6;
 
   ep.path_follow_PACA_iterate(ep.present_solution, lambda_start,
                           ep.unstable_eigenvector, 0.0, ep.get_ds());
@@ -67,8 +67,9 @@ int main ()
   std::vector<double> energy_values;
   std::vector<double> displacement_magnitude;
   lambda_values.push_back(0.0);
-  congugate_lambda_values.push_back(ep.congugate_lambda);
-  energy_values.push_back( ep.system_energy);
+  congugate_lambda_values.push_back(ep.congugate_lambda/ep.get_number_active_cells());
+  energy_values.push_back( ep.system_energy/ep.get_number_active_cells());
+  displacement_magnitude.push_back(ep.present_solution.l2_norm()/ep.get_number_active_cells());
 
 
   unsigned int num_negative_eigs = 0;
@@ -102,9 +103,9 @@ int main ()
    // get energy and congugate lambda value and save them.
    ep.assemble_system_energy_and_congugate_lambda(ep.present_lambda);
    lambda_values.push_back(ep.present_lambda);
-   congugate_lambda_values.push_back(ep.congugate_lambda);
-   energy_values.push_back(ep.system_energy);
-   displacement_magnitude.push_back(ep.present_solution.l2_norm());
+   congugate_lambda_values.push_back(ep.congugate_lambda/ep.get_number_active_cells());
+   energy_values.push_back(ep.system_energy/ep.get_number_active_cells());
+   displacement_magnitude.push_back(ep.present_solution.l2_norm()/ep.get_number_active_cells());
 
    prev_num_negative_eigs = num_negative_eigs;
    num_negative_eigs = ep.get_system_eigenvalues(ep.present_lambda, i);

@@ -37,8 +37,8 @@ int main ()
   // get the critical lambda value
   ep.evaluation_point = ep.present_solution;
 
-  double lambda_c = ep.bisect_find_lambda_critical(ep.critical_lambda_analytical - 0.1,
-                                               ep.critical_lambda_analytical + 0.1, 1e-7, 50);
+  double lambda_c = ep.bisect_find_lambda_critical(ep.critical_lambda_analytical - 0.02,
+                                               ep.critical_lambda_analytical + 0.02, 1e-6, 50);
 
   std::cout << "The lambda_c is: " << lambda_c << std::endl;
 
@@ -48,7 +48,7 @@ int main ()
   ep.assemble_system_energy_and_congugate_lambda(0.0);
 
 
-  double lambda_start = lambda_c + 1e-7;
+  double lambda_start = lambda_c + 1e-6;
   ep.update_F0(lambda_start);
   ep.newton_iterate();
   ep.output_results (1);
@@ -59,9 +59,10 @@ int main ()
   Vector<double> previous_solution = ep.present_solution;
   double previous_lambda = lambda_start;
 
-  ep.present_lambda = lambda_start - 1e-7;
+  ep.present_lambda = lambda_start - 1e-6;
 
-  ep.path_follow_PACA_iterate(ep.present_solution, lambda_start, ep.unstable_eigenvector, 0.0, ep.ds);
+  ep.path_follow_PACA_iterate(ep.present_solution, lambda_start,
+                          ep.unstable_eigenvector, 0.0, ep.get_ds());
   ep.output_results (2);
 
   // define variables for the tangent to next start point.
@@ -69,50 +70,50 @@ int main ()
   double lambda_tangent;
   double scalingVal;
 
-  std::vector<double> lambda_values(ep.load_steps);
-  std::vector<double> congugate_lambda_values(ep.load_steps);
-  std::vector<double> energy_values(ep.load_steps);
-  std::vector<double> displacement_magnitude(ep.load_steps);
+  std::vector<double> lambda_values(ep.get_load_steps());
+  std::vector<double> congugate_lambda_values(ep.get_load_steps());
+  std::vector<double> energy_values(ep.get_load_steps());
+  std::vector<double> displacement_magnitude(ep.get_load_steps());
   lambda_values[0] = 0.0;
   congugate_lambda_values[0] = ep.congugate_lambda;
   energy_values[0] = ep.system_energy;
 
 
-  for(unsigned int i = 1; i < ep.load_steps; i ++)
+  for(unsigned int i = 1; i < ep.get_load_steps(); i ++)
   {
-    if(i%20 == 0)
+    if(i%10 == 0)
     {
       for(unsigned int j = 0; j < 101; j++)
       {
         double wave_ratio = j*0.005;
-        ep.get_bloch_eigenvalues(j, i/20, wave_ratio);
+        ep.get_bloch_eigenvalues(j, i/10, wave_ratio);
       }
     }
 
 
 
-   // get the differences between past and this solution
-   solution_tangent = ep.present_solution;
-   solution_tangent -= previous_solution;
-   lambda_tangent = ep.present_lambda - previous_lambda;
+    // get the differences between past and this solution
+    solution_tangent = ep.present_solution;
+    solution_tangent -= previous_solution;
+    lambda_tangent = ep.present_lambda - previous_lambda;
 
-   // now scale to length 1.0
-   scalingVal = 1.0/ep.ds;
-   solution_tangent *= scalingVal;
-   lambda_tangent *= scalingVal;
+    // now scale to length 1.0
+    scalingVal = 1.0/ep.get_ds();
+    solution_tangent *= scalingVal;
+    lambda_tangent *= scalingVal;
 
-   previous_lambda = ep.present_lambda;
-   previous_solution = ep.present_solution;
+    previous_lambda = ep.present_lambda;
+    previous_solution = ep.present_solution;
 
-   ep.path_follow_PACA_iterate(ep.present_solution, ep.present_lambda, solution_tangent, lambda_tangent, ep.ds);
-   std::cout << std::setprecision(15) << "    lambda = " << ep.present_lambda << std::endl;
+    ep.path_follow_PACA_iterate(ep.present_solution, ep.present_lambda, solution_tangent, lambda_tangent, ep.get_ds());
+    std::cout << std::setprecision(15) << "    lambda = " << ep.present_lambda << std::endl;
 
-   // get energy and congugate lambda value and save them.
-   ep.assemble_system_energy_and_congugate_lambda(ep.present_lambda);
-   lambda_values[i] = ep.present_lambda;
-   congugate_lambda_values[i] = ep.congugate_lambda;
-   energy_values[i] = ep.system_energy;
-   displacement_magnitude[i] = ep.present_solution.l2_norm();
+    // get energy and congugate lambda value and save them.
+    ep.assemble_system_energy_and_congugate_lambda(ep.present_lambda);
+    lambda_values[i] = ep.present_lambda;
+    congugate_lambda_values[i] = ep.congugate_lambda/ep.get_number_active_cells();
+    energy_values[i] = ep.system_energy/ep.get_number_active_cells();
+    displacement_magnitude[i] = ep.present_solution.l2_norm()/ep.get_number_active_cells();
 
   }
   ep.output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude, 1);
