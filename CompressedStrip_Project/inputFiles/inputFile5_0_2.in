@@ -2,10 +2,10 @@
 # Blank lines and ones starting with '#' are ignored.
 
 # output file name prefix
-3_0
+5_0
 
 # number unit cells
-1
+2
 
 # Dimensions of grids in x1 and x2 of each unit cell, respectfully: unsigned int     unsigned int
 12 14
@@ -14,16 +14,16 @@
 1e-8 150
 
 # exponential growth parameter kappa
-3.0
+5.0
 
 # critical load
-0.235013170118756
+0.112832
 
 # critical frequency
-1.895290000000000
+1.4
 
 # ds and load steps : double     unsigned int
-0.002 2000
+0.01 8000
 
 # output every n steps: unsigned int
-50
+100

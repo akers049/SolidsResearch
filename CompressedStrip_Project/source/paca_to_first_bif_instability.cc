@@ -67,9 +67,9 @@ int main ()
   std::vector<double> energy_values;
   std::vector<double> displacement_magnitude;
   lambda_values.push_back(0.0);
-  congugate_lambda_values.push_back(ep.congugate_lambda/ep.get_number_active_cells());
-  energy_values.push_back( ep.system_energy/ep.get_number_active_cells());
-  displacement_magnitude.push_back(ep.present_solution.l2_norm()/ep.get_number_active_cells());
+  congugate_lambda_values.push_back(ep.congugate_lambda/ep.get_number_unit_cells());
+  energy_values.push_back( ep.system_energy/ep.get_number_unit_cells());
+  displacement_magnitude.push_back(ep.present_solution.l2_norm()/ep.get_number_unit_cells());
 
 
   unsigned int num_negative_eigs = 0;
@@ -97,29 +97,27 @@ int main ()
    if ((i % ep.get_output_every()) == 0)
    {
       ep.output_results(i/ep.get_output_every() + 2);
-    // get_system_eigenvalues(present_lambda, i/output_every);
+     // ep.get_system_eigenvalues(ep.present_lambda, i/ep.get_output_every());
    }
 
    // get energy and congugate lambda value and save them.
    ep.assemble_system_energy_and_congugate_lambda(ep.present_lambda);
    lambda_values.push_back(ep.present_lambda);
-   congugate_lambda_values.push_back(ep.congugate_lambda/ep.get_number_active_cells());
-   energy_values.push_back(ep.system_energy/ep.get_number_active_cells());
-   displacement_magnitude.push_back(ep.present_solution.l2_norm()/ep.get_number_active_cells());
+   congugate_lambda_values.push_back(ep.congugate_lambda/ep.get_number_unit_cells());
+   energy_values.push_back(ep.system_energy/ep.get_number_unit_cells());
+   displacement_magnitude.push_back(ep.present_solution.l2_norm()/ep.get_number_unit_cells());
 
    prev_num_negative_eigs = num_negative_eigs;
    num_negative_eigs = ep.get_system_eigenvalues(ep.present_lambda, i);
    std::cout << "    Number negative Eigenvalues : " << num_negative_eigs << std::endl;
-   if (i > 300 && num_negative_eigs == (prev_num_negative_eigs + 1))
+   if ((i > 300 && num_negative_eigs == (prev_num_negative_eigs + 1)))
    {
      std::cout << "\n Eigenvalue Crossing Found. Outputting current state and stopping" << std::endl;
      break;
    }
 
   }
-  // ep.output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude, 3);
-
-  ep.set_unstable_eigenvector(ep.present_lambda, 2);
+  ep.output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude, 1);
 
   ep.save_current_state();
 

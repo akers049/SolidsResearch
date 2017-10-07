@@ -111,12 +111,12 @@ int main ()
     // get energy and congugate lambda value and save them.
     ep.assemble_system_energy_and_congugate_lambda(ep.present_lambda);
     lambda_values[i] = ep.present_lambda;
-    congugate_lambda_values[i] = ep.congugate_lambda/ep.get_number_active_cells();
-    energy_values[i] = ep.system_energy/ep.get_number_active_cells();
-    displacement_magnitude[i] = ep.present_solution.l2_norm()/ep.get_number_active_cells();
+    congugate_lambda_values[i] = ep.congugate_lambda/ep.get_number_unit_cells();
+    energy_values[i] = ep.system_energy/ep.get_number_unit_cells();
+    displacement_magnitude[i] = ep.present_solution.l2_norm()/ep.get_number_unit_cells();
 
   }
-  ep.output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude, 1);
+  ep.output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude, 0);
 }
 
 

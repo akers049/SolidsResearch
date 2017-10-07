@@ -420,6 +420,7 @@ namespace NeoHookean_Newton
         }
       }
     }
+
     constraints.close ();
 
     // now do hanging nodes. Because some of the constraints might refer to the same dof
@@ -1240,6 +1241,10 @@ namespace NeoHookean_Newton
 
       lambda_eval = present_lambda + alpha*lambda_update;
 
+      // want to just skip if the lambda eval is out of range...
+      if (lambda_eval > 1.0 || lambda_eval < 0.0)
+        continue;
+
       update_F0(lambda_eval);
       assemble_system_rhs();
       apply_boundaries_to_rhs(&system_rhs, homogenous_dirichlet_dofs);
@@ -1900,14 +1905,6 @@ namespace NeoHookean_Newton
     boost::archive::text_oarchive solution_ar(solution_out);
     present_solution.save(solution_ar, 1);
 
-    // unstable eigenvector
-    char unstable_eigenvector_file[MAXLINE];
-    strcpy(unstable_eigenvector_file, saved_state_dir);
-    strcat(unstable_eigenvector_file, "/unstable_eigenvector.dat");
-    std::ofstream eigenvector_out(unstable_eigenvector_file);
-    boost::archive::text_oarchive eigenvector_ar(eigenvector_out);
-    unstable_eigenvector.save(eigenvector_ar, 1);
-
     char lambda_file[MAXLINE];
     strcpy(lambda_file, saved_state_dir);
     strcat(lambda_file, "/present_lambda.dat");
@@ -1952,14 +1949,7 @@ namespace NeoHookean_Newton
     boost::archive::text_iarchive solution_ar(solution_in);
     present_solution.load(solution_ar, 1);
 
-    // unstable eigenvector
-    char unstable_eigenvector_file[MAXLINE];
-    strcpy(unstable_eigenvector_file, input_dir_path);
-    strcat(unstable_eigenvector_file, "/unstable_eigenvector.dat");
-    std::ifstream eigenvector_in(unstable_eigenvector_file);
-    boost::archive::text_iarchive eigenvector_ar(eigenvector_in);
-    unstable_eigenvector.load(eigenvector_ar, 1);
-
+    // lambda value
     char lambda_file[MAXLINE];
     strcpy(lambda_file, input_dir_path);
     strcat(lambda_file, "/present_lambda.dat");
@@ -1969,7 +1959,6 @@ namespace NeoHookean_Newton
       std::cout << "Error reading file: " << lambda_file << " . Exiting." << std::endl;
       exit(-1);
     }
-
     lambda_in >> present_lambda;
     lambda_in.close();
 

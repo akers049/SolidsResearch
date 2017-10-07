@@ -5,7 +5,7 @@
 3_0
 
 # number unit cells
-1
+2
 
 # Dimensions of grids in x1 and x2 of each unit cell, respectfully: unsigned int     unsigned int
 12 14
@@ -23,7 +23,7 @@
 1.895290000000000
 
 # ds and load steps : double     unsigned int
-0.002 2000
+0.005 1500
 
 # output every n steps: unsigned int
 50

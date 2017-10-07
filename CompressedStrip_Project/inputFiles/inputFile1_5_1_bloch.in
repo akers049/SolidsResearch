@@ -23,7 +23,7 @@
 2.267675000000000
 
 # ds and load steps : double     unsigned int
-0.0005 2000
+0.002 600
 
 # output every n steps: unsigned int
 8000
