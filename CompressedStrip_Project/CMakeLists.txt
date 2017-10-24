@@ -30,12 +30,16 @@ DEAL_II_INITIALIZE_CACHED_VARIABLES()
 ADD_LIBRARY(CompressedStripPacaBloch  ${CMAKE_SOURCE_DIR}/source/CompressedStripPacaBloch.cc)
 DEAL_II_SETUP_TARGET(CompressedStripPacaBloch)
 
+ADD_LIBRARY(Constituitive ${CMAKE_SOURCE_DIR}/source/Constituitive.cc)
+DEAL_II_SETUP_TARGET(Constituitive)
+
+TARGET_LINK_LIBRARIES(CompressedStripPacaBloch Constituitive)
+
 # ADD_EXECUTABLE(paca_to_first_bif_instability ${CMAKE_SOURCE_DIR}/source/paca_to_first_bif_instability.cc $<TARGET_OBJECTS:CompressedStripPacaBloch>)
 
 ADD_EXECUTABLE(paca_to_first_bif_instability ${CMAKE_SOURCE_DIR}/source/paca_to_first_bif_instability.cc)
 DEAL_II_SETUP_TARGET(paca_to_first_bif_instability)
 TARGET_LINK_LIBRARIES(paca_to_first_bif_instability CompressedStripPacaBloch)
-
 
 ADD_EXECUTABLE(paca_continue ${CMAKE_SOURCE_DIR}/source/paca_continue.cc)
 DEAL_II_SETUP_TARGET(paca_continue)

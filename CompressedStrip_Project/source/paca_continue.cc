@@ -1,12 +1,11 @@
 #include "CompressedStripPacaBloch.h"
-#include "CompressedStripPacaBloch.cc"
 
 
 using namespace dealii;
 int main ()
 {
 
-  NeoHookean_Newton::ElasticProblem<2> ep;
+  compressed_strip::ElasticProblem ep;
 
   char fileName[MAXLINE];
   std::cout << "Please enter an input file: " << std::endl;
@@ -90,15 +89,12 @@ int main ()
 
    ep.path_follow_PACA_iterate(&(solution_tangent), lambda_tangent, ep.get_ds());
    std::cout << std::setprecision(15) << "    lambda = " << ep.get_present_lambda() << std::endl;
+   std::cout << "    Step Number: " << i << std::endl;
 
    if ((i % ep.get_output_every()) == 0)
    {
      ep.output_results(i/ep.get_output_every() + 1000*number_negative_eigs);
-    // get_system_eigenvalues(present_lambda, i/output_every);
    }
-
-//   num_negative_eigs = ep.get_system_eigenvalues(ep.present_lambda, i+1000);
-//   std::cout << "    Number negative Eigenvalues : " << num_negative_eigs << std::endl;
 
    // get energy and congugate lambda value and save them. Make sure to scale by number
    // of unit cells...
@@ -106,7 +102,7 @@ int main ()
    lambda_values.push_back(ep.get_present_lambda());
    congugate_lambda_values.push_back(ep.congugate_lambda/ep.get_number_unit_cells());
    energy_values.push_back(ep.system_energy/ep.get_number_unit_cells());
-   displacement_magnitude.push_back(ep.present_solution.l2_norm()/ep.get_number_unit_cells());
+   displacement_magnitude.push_back(ep.present_solution.l2_norm()/(sqrt(1.0*ep.get_number_unit_cells())));
 
 
   }

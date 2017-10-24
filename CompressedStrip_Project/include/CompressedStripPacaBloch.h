@@ -58,9 +58,13 @@
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
 
-#define MAXLINE 1024
+#include "Constituitive.h"
 
-namespace NeoHookean_Newton
+
+#define MAXLINE 1024
+#define DIM 2
+
+namespace compressed_strip
 {
   using namespace dealii;
   /****************************************************************
@@ -71,20 +75,19 @@ namespace NeoHookean_Newton
     * This is a dealii Function class for the nu function.
     */
 
-   template <int dim>
-   class NuFunction : public Function<dim>
+   class NuFunction : public Function<DIM>
    {
 
    public:
-     NuFunction () : Function<dim>() {}
+     NuFunction () : Function<DIM>() {}
      virtual ~NuFunction (){}
 
      // const double PI = std::atan(1.0)*4;
 
-     virtual double value (const Point<dim> &p,
+     virtual double value (const Point<DIM> &p,
                            const unsigned int  component = 0) const;
 
-     virtual void value_list(const std::vector< Point< dim > > &  points,
+     virtual void value_list(const std::vector< Point< DIM > > &  points,
                               std::vector< double > &   values,
                               const unsigned int  component = 0 )   const;
 
@@ -95,12 +98,11 @@ namespace NeoHookean_Newton
     * This is a dealii Function class for the mu function.
     */
 
-   template <int dim>
-   class MuFunction : public Function<dim>
+   class MuFunction : public Function<DIM>
    {
 
    public:
-     MuFunction (double expontential_growth_param) : Function<dim>()
+     MuFunction (double expontential_growth_param) : Function<DIM>()
      {
        kappa = expontential_growth_param;
      }
@@ -108,10 +110,10 @@ namespace NeoHookean_Newton
 
      // const double PI = std::atan(1.0)*4;
 
-     virtual double value (const Point<dim> &p,
+     virtual double value (const Point<DIM> &p,
                            const unsigned int  component = 0) const;
 
-     virtual void value_list(const std::vector< Point< dim > > &  points,
+     virtual void value_list(const std::vector< Point< DIM > > &  points,
                               std::vector< double > &   values,
                               const unsigned int  component = 0 )   const;
 
@@ -124,16 +126,11 @@ namespace NeoHookean_Newton
   /****  ElasticProblem  *****
    * This is the primary class used, with all the dealii stuff
    */
-  template <int dim>
   class ElasticProblem
   {
   public:
     ElasticProblem();
     ~ElasticProblem();
-
-    double get_energy(const double nu, const double mu,
-                          Tensor<2, dim> F, double II_F);
-
 
     void create_mesh();
     void setup_system ();
@@ -166,8 +163,8 @@ namespace NeoHookean_Newton
     void read_input_file(char* filename);
 
     void save_current_state();
-
     void load_state();
+    void load_intial_tangent();
 
     // get methods for important constants
     double get_present_lambda(){return present_lambda;};
@@ -194,14 +191,7 @@ namespace NeoHookean_Newton
     double critical_frequency = 0.0;
 
   private:
-    Tensor<2,dim> get_deformation_gradient(std::vector<Tensor<1,dim> > old_solution_gradient);
-    Tensor<4,dim> get_incremental_moduli_tensor(const double nu,
-                                                const double mu, Tensor<2,dim> F_inv,
-                                                double II_F);
-    Tensor<2,dim> get_piola_kirchoff_tensor(const double nu, const double mu,
-                                            Tensor<2,dim> F, Tensor<2,dim> F_inv,
-                                            double II_F);
-
+    Tensor<2,DIM> get_deformation_gradient(std::vector<Tensor<1,DIM> > old_solution_gradient);
 
     void setup_system_constraints();
     void setup_bloch ();
@@ -230,13 +220,14 @@ namespace NeoHookean_Newton
                             int const maxSize, int* const endOfFileFlag);
 
 
-    Triangulation<dim>   triangulation;
-    DoFHandler<dim>      dof_handler;
+    Triangulation<DIM,DIM>   triangulation;
+    DoFHandler<DIM>      dof_handler;
 
-    FESystem<dim>        fe;
+    FESystem<DIM>        fe;
 
     ConstraintMatrix     constraints;
     ConstraintMatrix     constraints_bloch;
+    ConstraintMatrix     bloch_hanging_node_constraints;
 
 
     std::vector<IndexSet>    owned_partitioning;
@@ -246,6 +237,8 @@ namespace NeoHookean_Newton
     SparseMatrix<double> system_matrix;
     SparsityPattern      sparsity_pattern_bloch;
     SparseMatrix<double> bloch_matrix;
+
+    Compressible_NeoHookean nh;
 
     double               present_lambda = 0.0;
     double               lambda_update= 0.0;
@@ -257,7 +250,7 @@ namespace NeoHookean_Newton
     double               lambda_diff = 0.0;
     double               rhs_bottom = 0.0;
 
-    Tensor<2,dim>        F0;
+    Tensor<2,DIM>        F0;
 
     std::vector<unsigned int>  grid_dimensions;
     std::vector<double> domain_dimensions;
@@ -272,8 +265,8 @@ namespace NeoHookean_Newton
 
     char output_directory[MAXLINE];
 
-    NuFunction<dim> nu;
-    MuFunction<dim> *mu = NULL;
+    NuFunction nu;
+    MuFunction *mu = NULL;
 
     std::vector<int> matched_dofs;
 

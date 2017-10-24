@@ -6,14 +6,13 @@
  */
 
 #include "CompressedStripPacaBloch.h"
-#include "CompressedStripPacaBloch.cc"
 
 
 using namespace dealii;
 int main ()
 {
 
-  NeoHookean_Newton::ElasticProblem<2> ep;
+  compressed_strip::ElasticProblem ep;
 
   char fileName[MAXLINE];
   std::cout << "Please enter an input file: " << std::endl;
@@ -81,13 +80,13 @@ int main ()
 
   for(unsigned int i = 1; i < ep.get_load_steps(); i ++)
   {
-    std::cout << "     Step Number : " << i << std::endl;
-    if(i%20 == 0)
+    std::cout << "    Step Number : " << i << std::endl;
+    if(i%30 == 0)
     {
-      for(unsigned int j = 0; j < 100; j++)
+      for(unsigned int j = 0; j < 50; j++)
       {
-        double wave_ratio = j*0.005;
-        ep.get_bloch_eigenvalues(j, i/20, wave_ratio);
+        double wave_ratio = j*0.01;
+        ep.get_bloch_eigenvalues(j, i/30, wave_ratio);
       }
     }
 
@@ -107,7 +106,7 @@ int main ()
     previous_solution = ep.present_solution;
 
     ep.path_follow_PACA_iterate(&(solution_tangent), lambda_tangent, ep.get_ds());
-    std::cout << std::setprecision(15) << "   lambda = " << ep.get_present_lambda() << std::endl;
+    std::cout << std::setprecision(15) << "    Lambda = " << ep.get_present_lambda() << std::endl;
 
 
     // get energy and congugate lambda value and save them.
@@ -115,7 +114,7 @@ int main ()
     lambda_values[i] = ep.get_present_lambda();
     congugate_lambda_values[i] = ep.congugate_lambda/ep.get_number_unit_cells();
     energy_values[i] = ep.system_energy/ep.get_number_unit_cells();
-    displacement_magnitude[i] = ep.present_solution.l2_norm()/ep.get_number_unit_cells();
+    displacement_magnitude[i] = ep.present_solution.l2_norm()/(sqrt(1.0*ep.get_number_unit_cells()));
 
   }
   ep.output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude, 0);

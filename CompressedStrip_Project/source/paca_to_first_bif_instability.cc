@@ -1,12 +1,10 @@
 #include "CompressedStripPacaBloch.h"
-#include "CompressedStripPacaBloch.cc"
-
 
 using namespace dealii;
 int main ()
 {
 
-  NeoHookean_Newton::ElasticProblem<2> ep;
+  compressed_strip::ElasticProblem ep;
 
   char fileName[MAXLINE];
   std::cout << "Please enter an input file: " << std::endl;
@@ -98,7 +96,7 @@ int main ()
    if ((i % ep.get_output_every()) == 0)
    {
       ep.output_results(i/ep.get_output_every() + 2);
-     // ep.get_system_eigenvalues(ep.present_lambda, i/ep.get_output_every());
+   // ep.get_system_eigenvalues(ep.present_lambda, i/ep.get_output_every());
    }
 
    // get energy and congugate lambda value and save them.
@@ -106,7 +104,7 @@ int main ()
    lambda_values.push_back(ep.get_present_lambda());
    congugate_lambda_values.push_back(ep.congugate_lambda/ep.get_number_unit_cells());
    energy_values.push_back(ep.system_energy/ep.get_number_unit_cells());
-   displacement_magnitude.push_back(ep.present_solution.l2_norm()/ep.get_number_unit_cells());
+   displacement_magnitude.push_back(ep.present_solution.l2_norm()/(sqrt(1.0*ep.get_number_unit_cells())));
 
    prev_num_negative_eigs = num_negative_eigs;
    num_negative_eigs = ep.get_system_eigenvalues(ep.get_present_lambda(), i);
