@@ -165,6 +165,8 @@ namespace compressed_strip
     void save_current_state();
     void load_state();
     void load_intial_tangent();
+    void set_boundary_values();
+    void print_dof_coords_and_vals(unsigned int index);
 
     // get methods for important constants
     double get_present_lambda(){return present_lambda;};
@@ -190,14 +192,15 @@ namespace compressed_strip
     double critical_lambda_analytical = 0.0;
     double critical_frequency = 0.0;
 
+
   private:
     Tensor<2,DIM> get_deformation_gradient(std::vector<Tensor<1,DIM> > old_solution_gradient);
 
     void setup_system_constraints();
+    void make_periodicity_constraints();
+    void make_ave_x1_constraints();
+    void make_symmetry_constraints();
     void setup_bloch ();
-
-    void set_boundary_values();
-
 
     void assemble_system_matrix();
     void assemble_system_rhs();
@@ -220,6 +223,10 @@ namespace compressed_strip
                             int const maxSize, int* const endOfFileFlag);
 
 
+
+    void renumber_boundary_ids();
+
+
     Triangulation<DIM,DIM>   triangulation;
     DoFHandler<DIM>      dof_handler;
 
@@ -235,6 +242,7 @@ namespace compressed_strip
 
     SparsityPattern      sparsity_pattern;
     SparseMatrix<double> system_matrix;
+
     SparsityPattern      sparsity_pattern_bloch;
     SparseMatrix<double> bloch_matrix;
 
@@ -253,6 +261,7 @@ namespace compressed_strip
     Tensor<2,DIM>        F0;
 
     std::vector<unsigned int>  grid_dimensions;
+    bool nonUniform_mesh_flag = false;
     std::vector<double> domain_dimensions;
     double tol = 0.0;
     unsigned int maxIter = 0;
@@ -262,6 +271,8 @@ namespace compressed_strip
     unsigned int load_steps = 0;
     unsigned int output_every = 0;
     unsigned int number_unit_cells = 1.0;
+
+    bool fileLoadFlag = false;
 
     char output_directory[MAXLINE];
 

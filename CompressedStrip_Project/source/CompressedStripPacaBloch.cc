@@ -140,10 +140,6 @@ namespace compressed_strip
   void ElasticProblem::create_mesh()
   {
 
-    // set domain DIMensions
-    domain_dimensions[0] = number_unit_cells*2.0*(4.0*atan(1.0))/critical_frequency;
-    domain_dimensions[1] = 1.0;
-
     // creates our strip.
     Point<DIM> corner1, corner2;
     corner1(0) = -domain_dimensions[0]/2.0;
@@ -154,29 +150,36 @@ namespace compressed_strip
 
 
 
-    // Now we will refine this mesh
-    const int numSections = 2;
-    for (int i = 0 ; i < numSections; i ++)
+    if (nonUniform_mesh_flag)
     {
-      double section_x2 = (0.5/numSections)*i + 0.5;
-      Triangulation<2>::active_cell_iterator cell = triangulation.begin_active();
-      Triangulation<2>::active_cell_iterator endc = triangulation.end();
-      for (; cell!=endc; ++cell)
+      // Now we will refine this mesh
+      const int numSections = 2;
+      for (int i = 0 ; i < numSections; i ++)
       {
-        for (unsigned int v=0;
-             v < GeometryInfo<2>::vertices_per_cell;
-             ++v)
-          {
-            const double x2_pos = (cell->vertex(v))(1);
-            if ( x2_pos > section_x2)
-              {
-                cell->set_refine_flag ();
-                break;
-              }
-          }
+        double section_x2 = (0.5/numSections)*i + 0.5;
+        Triangulation<2>::active_cell_iterator cell = triangulation.begin_active();
+        Triangulation<2>::active_cell_iterator endc = triangulation.end();
+        for (; cell!=endc; ++cell)
+        {
+          for (unsigned int v=0;
+               v < GeometryInfo<2>::vertices_per_cell;
+               ++v)
+            {
+              const double x2_pos = (cell->vertex(v))(1);
+              if ( x2_pos > section_x2)
+                {
+                  cell->set_refine_flag ();
+                  break;
+                }
+            }
+        }
+        triangulation.execute_coarsening_and_refinement ();
       }
-      triangulation.execute_coarsening_and_refinement ();
     }
+
+    // Make sure to renumber the boundaries
+    renumber_boundary_ids();
+
   }
 
   void ElasticProblem::setup_system ()
@@ -184,14 +187,14 @@ namespace compressed_strip
     // Sets up system. Makes the constraint matrix, and reinitializes the
     // vectors and matricies used throughout to be the proper size.
 
-    dof_handler.distribute_dofs (fe);
-
     // only reinit the present solution if it wasn't already loaded in
-    if (present_solution.size() == 0)
-      present_solution.reinit (dof_handler.n_dofs());
+    // Also, only distribute the dofs if it hasn't been done so already.
+    if (fileLoadFlag == false)
+    {
 
-    IndexSet locally_relevant_dofs;
-    DoFTools::extract_locally_relevant_dofs (dof_handler, locally_relevant_dofs);
+      dof_handler.distribute_dofs (fe);
+      present_solution.reinit (dof_handler.n_dofs());
+    }
 
     setup_system_constraints();
 
@@ -216,24 +219,103 @@ namespace compressed_strip
 
   void ElasticProblem::setup_system_constraints ()
   {
+
     constraints.clear ();
 
-    // periodic in x1 on 0 and 1 face (x1 faces) will do the x2 direction with x2 symmetry...
-    DoFTools::make_periodicity_constraints<DoFHandler<DIM>>(dof_handler, 0, 1, 0, constraints);
+    make_periodicity_constraints();
+    make_ave_x1_constraints();
+    make_symmetry_constraints();
 
-    // now do constraints that the average x1 displacement is zero
+    constraints.close ();
+
+    // now do hanging nodes. Because some of the constraints might refer to the same dof
+    // for both the symmetry constraint and the hanging node constraint, we will make them
+    // separate, then merge them, giving precedence to the hanging node constraints;
+    ConstraintMatrix hanging_node_constraints;
+    hanging_node_constraints.clear();
+    DoFTools::make_hanging_node_constraints (dof_handler, hanging_node_constraints);
+    hanging_node_constraints.close();
+
+    constraints.merge(hanging_node_constraints, ConstraintMatrix::MergeConflictBehavior::right_object_wins);
+  }
+
+  void ElasticProblem::make_periodicity_constraints()
+  {
 
     const unsigned int   number_dofs = dof_handler.n_dofs();
 
     std::vector<bool> x1_components = {true, false};
     ComponentMask x1_mask(x1_components);
 
-    std::vector<bool> boundary_dof_x1 (number_dofs, false);
-    std::vector<bool> boundary_01_dof_x1 (number_dofs, false);
+    std::vector<bool> is_x1_comp(number_dofs, false);
 
-    std::set< types::boundary_id > boundary_id_01;
-    boundary_id_01.insert(0);
-    boundary_id_01.insert(1);
+    DoFTools::extract_dofs(dof_handler, x1_mask, is_x1_comp);
+
+    std::vector<bool> x1_x2_components = {true, true};
+    ComponentMask x1_x2_mask(x1_x2_components);
+    std::vector<bool> boundary_1_dof (number_dofs, false);
+    std::vector<bool> boundary_2_dof (number_dofs, false);
+
+    std::set< types::boundary_id > boundary_id_1;
+    boundary_id_1.insert(1);
+
+    std::set< types::boundary_id > boundary_id_2;
+    boundary_id_2.insert(2);
+
+    DoFTools::extract_boundary_dofs(dof_handler,
+                                    x1_x2_mask,
+                                    boundary_1_dof,
+                                    boundary_id_1);
+
+    DoFTools::extract_boundary_dofs (dof_handler,
+                                     x1_x2_mask,
+                                     boundary_2_dof,
+                                     boundary_id_2);
+
+    // get the coords of the dofs
+    std::vector<Point<DIM>> support_points(number_dofs);
+    MappingQ1<DIM> mapping;
+    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
+
+    for(unsigned int i = 0; i < number_dofs; i++)
+    {
+      if(boundary_1_dof[i])
+      {
+        bool foundFlag = 0;
+        for (unsigned int j = 0 ; j < number_dofs; j++)
+        {
+          if (boundary_2_dof[j] && (is_x1_comp[i] == is_x1_comp[j]) &&
+              fabs(support_points[i](1) - support_points[j](1))< 1e-4 && i != j)
+            // is a match
+          {
+            constraints.add_line(i);
+            constraints.add_entry(i, j, 1.0);
+            foundFlag = true;
+          }
+        }
+        if(foundFlag == false)
+        {
+          std::cout << "could not find match for boundary 0 dof " << i << " Exiting." << std::endl;
+          exit(-1);
+        }
+      }
+    }
+  }
+
+  void ElasticProblem::make_ave_x1_constraints()
+  {
+    unsigned int number_dofs = dof_handler.n_dofs();
+
+    // now do constraints that the average x1 displacement is zero
+    std::vector<bool> x1_components = {true, false};
+    ComponentMask x1_mask(x1_components);
+
+    std::vector<bool> boundary_dof_x1 (number_dofs, false);
+    std::vector<bool> boundary_12_dof_x1 (number_dofs, false);
+
+    std::set< types::boundary_id > boundary_id_12;
+    boundary_id_12.insert(1);
+    boundary_id_12.insert(2);
 
     DoFTools::extract_boundary_dofs(dof_handler,
                                     x1_mask,
@@ -241,15 +323,15 @@ namespace compressed_strip
 
     DoFTools::extract_boundary_dofs (dof_handler,
                                      x1_mask,
-                                     boundary_01_dof_x1,
-                                     boundary_id_01);
+                                     boundary_12_dof_x1,
+                                     boundary_id_12);
 
 
 
     unsigned int first_boundary_dof = 0;
     for (unsigned int i=0; i<dof_handler.n_dofs(); ++i)
     {
-      if ((boundary_dof_x1[i] == true) && (boundary_01_dof_x1[i] == false))
+      if ((boundary_dof_x1[i] == true) && (boundary_12_dof_x1[i] == false))
       {
         first_boundary_dof = i;
         break;
@@ -265,14 +347,11 @@ namespace compressed_strip
         constraints.add_entry (first_boundary_dof, i, -1);
 
     }
+  }
 
-    // now do the constraint that the x2 displacements are symmetric about the line x1 = 0
-    // and the x1 displacements are antisymmetric
-
-    // get the coords of the dofs
-    std::vector<Point<DIM>> support_points(number_dofs);
-    MappingQ1<DIM> mapping;
-    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
+  void ElasticProblem::make_symmetry_constraints()
+  {
+    unsigned int number_dofs = dof_handler.n_dofs();
 
     // get the vector that tells us it the dof is an x2 component
     std::vector<bool> x2_components = {false, true};
@@ -282,91 +361,102 @@ namespace compressed_strip
 
     DoFTools::extract_dofs(dof_handler, x2_mask, is_x2_comp);
 
-    // get the vector that tells us if it is a boundary 2 x2 dof
+    // get the vector that tells us if it is a boundary 3 x2 dof
     // (these are already constrained to zero)
 
-    std::vector<bool> boundary_2_dof_x2 (number_dofs, false);
+    std::vector<bool> boundary_3_dof_x2 (number_dofs, false);
+
+    std::set< types::boundary_id > boundary_id_3;
+    boundary_id_3.insert(3);
+
+    DoFTools::extract_boundary_dofs(dof_handler,
+                                      x2_mask,
+                                      boundary_3_dof_x2,
+                                      boundary_id_3);
+
+    std::vector<bool> x1_x2_components = {true, true};
+    ComponentMask x1_x2_mask(x1_x2_components);
+    std::vector<bool> boundary_1_dof (number_dofs, false);
+    std::vector<bool> boundary_2_dof (number_dofs, false);
+
+    std::set< types::boundary_id > boundary_id_1;
+    boundary_id_1.insert(1);
 
     std::set< types::boundary_id > boundary_id_2;
     boundary_id_2.insert(2);
 
     DoFTools::extract_boundary_dofs(dof_handler,
-                                       x2_mask,
-                                       boundary_2_dof_x2,
-                                       boundary_id_2);
+                                   x1_x2_mask,
+                                   boundary_1_dof,
+                                   boundary_id_1);
 
+    DoFTools::extract_boundary_dofs (dof_handler,
+                                    x1_x2_mask,
+                                    boundary_2_dof,
+                                    boundary_id_2);
 
+    // get the coords of the dofs
+    std::vector<Point<DIM>> support_points(number_dofs);
+    MappingQ1<DIM> mapping;
+    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
 
     matched_dofs.resize(number_dofs, -1);
     for(unsigned int i = 0; i < number_dofs; i++)
     {
-      if (is_x2_comp[i])
-      {
-        if ( boundary_2_dof_x2[i] || matched_dofs[i] != -1 || (support_points[i](0) == 0.0))
-        {
-          // this dof has already been constrained or don't need to be
-          continue;
-        }
-        else
-        {
-          double x1_coord = support_points[i](0);
-          double x2_coord = support_points[i](1);
-          for (unsigned int j = 0; j < number_dofs; j++)
-          {
-            if (is_x2_comp[j] && (fabs(x1_coord + support_points[j](0)) < 1e-12 ) &&
-                                  (fabs(x2_coord - support_points[j](1)) < 1e-12) && i != j)
-            {
-              constraints.add_line (i);
-              constraints.add_entry (i, j, 1);
-              matched_dofs[i] = j;
-              matched_dofs[j] = i;
-              break;
-            }
-          }
-        }
-      }
-      else
-      {
-        if (support_points[i](0) == 0.0)
-        {
-          constraints.add_line(i);
-        }
-        else if ( boundary_01_dof_x1[i] || matched_dofs[i] != -1 || (support_points[i](0) == 0.0))
-        {
-          // this dof has already been constrained or don't need to be
-          continue;
-        }
-        else
-        {
-          double x1_coord = support_points[i](0);
-          double x2_coord = support_points[i](1);
-          for (unsigned int j = 0; j < number_dofs; j++)
-          {
-            if ((!is_x2_comp[j]) && (fabs(x1_coord + support_points[j](0)) < 1e-12 ) &&
-                                  (fabs(x2_coord - support_points[j](1)) < 1e-12) && i != j)
-            {
-              constraints.add_line (i);
-              constraints.add_entry (i, j, -1);
-              matched_dofs[i] = j;
-              matched_dofs[j] = i;
-              break;
-            }
-          }
-        }
-      }
+     if (boundary_1_dof[i] || boundary_2_dof[i])
+       continue;
+     if (is_x2_comp[i])
+     {
+       if ( boundary_3_dof_x2[i] || matched_dofs[i] != -1 || (support_points[i](0) == 0.0))
+       {
+         // this dof has already been constrained or don't need to be
+         continue;
+       }
+       else
+       {
+         double x1_coord = support_points[i](0);
+         double x2_coord = support_points[i](1);
+         for (unsigned int j = 0; j < number_dofs; j++)
+         {
+           if (is_x2_comp[j] && (fabs(x1_coord + support_points[j](0)) < 1e-12 ) &&
+                                 (fabs(x2_coord - support_points[j](1)) < 1e-12) && i != j)
+           {
+             constraints.add_line (i);
+             constraints.add_entry (i, j, 1);
+             matched_dofs[i] = j;
+             matched_dofs[j] = i;
+             break;
+           }
+         }
+       }
+     }
+     else
+     {
+       if ( matched_dofs[i] != -1 || (support_points[i](0) == 0.0))
+       {
+         // this dof has already been constrained or don't need to be
+         continue;
+       }
+       else
+       {
+         double x1_coord = support_points[i](0);
+         double x2_coord = support_points[i](1);
+         for (unsigned int j = 0; j < number_dofs; j++)
+         {
+           if ((!is_x2_comp[j]) && (fabs(x1_coord + support_points[j](0)) < 1e-12 ) &&
+                                 (fabs(x2_coord - support_points[j](1)) < 1e-12) && i != j)
+           {
+             constraints.add_line (i);
+             constraints.add_entry (i, j, -1);
+             matched_dofs[i] = j;
+             matched_dofs[j] = i;
+             break;
+           }
+         }
+       }
+     }
     }
 
-    constraints.close ();
-
-    // now do hanging nodes. Because some of the constraints might refer to the same dof
-    // for both the symmetry constraint and the hanging node constraint, we will make them
-    // separate, then merge them, giving precedence to the hanging node constraints;
-    ConstraintMatrix hanging_node_constraints;
-    hanging_node_constraints.clear();
-    DoFTools::make_hanging_node_constraints (dof_handler, hanging_node_constraints);
-    hanging_node_constraints.close();
-
-    constraints.merge(hanging_node_constraints, ConstraintMatrix::MergeConflictBehavior::right_object_wins);
   }
 
   void ElasticProblem::setup_bloch()
@@ -379,20 +469,32 @@ namespace compressed_strip
     bloch_hanging_node_constraints.clear();
     DoFTools::make_hanging_node_constraints (dof_handler, bloch_hanging_node_constraints);
 
-    for(unsigned int i = 0; i < number_dofs; i ++)
-    {
-      const std::vector< std::pair< types::global_dof_index, double > > *next_constraint_line =
-         bloch_hanging_node_constraints.get_constraint_entries(i);
-      if(next_constraint_line != NULL)
-      {
-        bloch_hanging_node_constraints.add_line(i + number_dofs);
-        for(unsigned int j = 0; j < next_constraint_line->size(); j ++)
-        {
-         bloch_hanging_node_constraints.add_entry((i+number_dofs), (*next_constraint_line)[j].first, (*next_constraint_line)[j].second );
-        }
-      }
-    }
-    bloch_hanging_node_constraints.close();
+    ConstraintMatrix hanging_nodes_shifted;
+    hanging_nodes_shifted.clear();
+    DoFTools::make_hanging_node_constraints(dof_handler, hanging_nodes_shifted);
+    hanging_nodes_shifted.shift(number_dofs);
+    hanging_nodes_shifted.close();
+
+    bloch_hanging_node_constraints.merge(hanging_nodes_shifted);
+
+
+//    for(unsigned int i = 0; i < number_dofs; i ++)
+//    {
+//      const std::vector< std::pair< types::global_dof_index, double > > *next_constraint_line =
+//         bloch_hanging_node_constraints.get_constraint_entries(i);
+//      if(next_constraint_line != NULL)
+//      {
+//        bloch_hanging_node_constraints.add_line(i + number_dofs);
+//        for(unsigned int j = 0; j < next_constraint_line->size(); j ++)
+//        {
+//        //  std::cout << "(" << i << ", " << (*next_constraint_line)[j].first << ") :   " <<  (*next_constraint_line)[j].second << std::endl;
+//          bloch_hanging_node_constraints.add_entry((i+number_dofs),
+//                                                   ((*next_constraint_line)[j].first + number_dofs),
+//                                                   (*next_constraint_line)[j].second );        }
+//      }
+//    }
+//    bloch_hanging_node_constraints.close();
+
 
 
     // now to do the sparsity stuff, have to make the bloch constraint matrix. Just use
@@ -442,26 +544,26 @@ namespace compressed_strip
     ComponentMask x1_mask(x1_components);
 
     std::vector<bool> boundary_1_dof (number_dofs, false);
-    std::vector<bool> boundary_0_dof (number_dofs, false);
-
-    std::set< types::boundary_id > boundary_id_0;
-    boundary_id_0.insert(0);
+    std::vector<bool> boundary_2_dof (number_dofs, false);
 
     std::set< types::boundary_id > boundary_id_1;
     boundary_id_1.insert(1);
+
+    std::set< types::boundary_id > boundary_id_2;
+    boundary_id_2.insert(2);
 
     std::vector<bool> x1_x2_components = {true, true};
     ComponentMask x1_x2_mask(x1_x2_components);
 
     DoFTools::extract_boundary_dofs(dof_handler,
                                    x1_x2_mask,
-                                   boundary_0_dof,
-                                   boundary_id_0);
+                                   boundary_1_dof,
+                                   boundary_id_1);
 
     DoFTools::extract_boundary_dofs (dof_handler,
                                     x1_x2_mask,
-                                    boundary_1_dof,
-                                    boundary_id_1);
+                                    boundary_2_dof,
+                                    boundary_id_2);
 
     std::vector<bool> is_x1_comp(number_dofs, false);
 
@@ -474,12 +576,12 @@ namespace compressed_strip
 
     for(unsigned int i = 0; i < number_dofs; i ++)
     {
-     if (boundary_0_dof[i])
+     if (boundary_1_dof[i])
      {
        double x2_coord = support_points[i](1);
        for (unsigned int j = 0; j < number_dofs; j++)
        {
-         if (boundary_1_dof[j] &&
+         if (boundary_2_dof[j] &&
              (fabs(x2_coord - support_points[j](1)) < 1e-12 ) &&
              (is_x1_comp[i] == is_x1_comp[j]) )
          {
@@ -501,8 +603,8 @@ namespace compressed_strip
     constraints_bloch.close();
 
     // Because some of the constraints might refer to the same dof
-    // for both the symmetry constraint and the hanging node constraint, we will make them
-    // separate, then merge them, giving precedence to the hanging node constraints;
+    // for both the bloch constraint and the hanging node constraint, we will make them
+    // separate, then merge them, giving precedence to the hanging node constraints.
 
     constraints_bloch.merge(bloch_hanging_node_constraints, ConstraintMatrix::MergeConflictBehavior::right_object_wins);
 
@@ -520,11 +622,6 @@ namespace compressed_strip
     std::map<types::global_dof_index,double> boundary_values;
 
     VectorTools::interpolate_boundary_values (   dof_handler,
-                                                 0,
-                                                 ZeroFunction<DIM>(DIM),
-                                                 boundary_values);
-
-    VectorTools::interpolate_boundary_values (   dof_handler,
                                                  1,
                                                  ZeroFunction<DIM>(DIM),
                                                  boundary_values);
@@ -536,6 +633,11 @@ namespace compressed_strip
 
     VectorTools::interpolate_boundary_values (   dof_handler,
                                                  3,
+                                                 ZeroFunction<DIM>(DIM),
+                                                 boundary_values);
+
+    VectorTools::interpolate_boundary_values (   dof_handler,
+                                                 4,
                                                  ZeroFunction<DIM>(DIM),
                                                  boundary_values,
                                                  x1_mask);
@@ -634,7 +736,7 @@ namespace compressed_strip
       fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
 
       nu.value_list (fe_values.get_quadrature_points(), nu_values);
-      mu->value_list     (fe_values.get_quadrature_points(), mu_values);
+      mu->value_list (fe_values.get_quadrature_points(), mu_values);
 
 
       for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
@@ -660,6 +762,7 @@ namespace compressed_strip
               {
                 cell_matrix(n,m) += d2W_dFdF[component_n][j][component_m][l]*
                         fe_values.shape_grad(n, q_point)[j]*fe_values.shape_grad(m, q_point)[l]*fe_values.JxW(q_point);
+
               }
           }
         }
@@ -949,14 +1052,14 @@ namespace compressed_strip
 
     std::map<types::global_dof_index,double> boundary_values;
 
-    std::vector<bool> side2_components = {false, true};
-    ComponentMask side2_mask(side2_components);
+    std::vector<bool> side3_components = {false, true};
+    ComponentMask side3_mask(side3_components);
 
     VectorTools::interpolate_boundary_values (dof_handler,
-                                              2,
+                                              3,
                                               ZeroFunction<DIM, double>(DIM),
                                               boundary_values,
-                                              side2_mask);
+                                              side3_mask);
 
     MatrixTools::apply_boundary_values (boundary_values,
                                         system_matrix,
@@ -973,25 +1076,26 @@ namespace compressed_strip
 
     std::vector<bool> side2_components = {false, true};
     ComponentMask x2_mask(side2_components);
-    std::vector<bool> boundary_2_dof_x2 (number_dofs, false);
+    std::vector<bool> boundary_3_dof_x2 (number_dofs, false);
 
-    std::set< types::boundary_id > boundary_id_2;
-    boundary_id_2.insert(2);
+    std::set< types::boundary_id > boundary_id_3;
+    boundary_id_3.insert(3);
 
     DoFTools::extract_boundary_dofs(dof_handler,
                                       x2_mask,
-                                      boundary_2_dof_x2,
-                                      boundary_id_2);
+                                      boundary_3_dof_x2,
+                                      boundary_id_3);
 
     unsigned int m = bloch_matrix.m();
     // set values on the diagonal to the first diagonal element,
     // or 1 if it is nonexistent
+    // This all follows the dealii built in apply_boundaries closely
     double first_nonzero_diagonal_entry = 1.0;
     for (unsigned int i=0; i<m; ++i)
     {
       if (bloch_matrix.diag_element(i) != 0.0)
       {
-        first_nonzero_diagonal_entry = bloch_matrix.diag_element(i);
+        first_nonzero_diagonal_entry = fabs(bloch_matrix.diag_element(i));
         break;
       }
     }
@@ -1006,12 +1110,12 @@ namespace compressed_strip
       for (typename SparseMatrix<double>::iterator entry = bloch_matrix.begin(row);
                     entry != end_row; ++entry)
       {
-        if((boundary_2_dof_x2[row%number_dofs] || boundary_2_dof_x2[entry->column()%number_dofs])
+        if((boundary_3_dof_x2[row%number_dofs] || boundary_3_dof_x2[entry->column()%number_dofs])
             && (row != entry->column()))
         {
           entry->value() = 0.0;
         }
-        else if(boundary_2_dof_x2[row%number_dofs] && (row == entry->column()) &&
+        else if(boundary_3_dof_x2[row%number_dofs] && (row == entry->column()) &&
                 (bloch_matrix.diag_element(row%number_dofs) == 0.0))
         {
           entry->value() = first_nonzero_diagonal_entry;
@@ -1033,10 +1137,10 @@ namespace compressed_strip
     unsigned int iteration = 0;
 
     // get the dofs that we will apply dirichlet condition to
-    std::vector<bool> boundary_2_dof_x2 (dof_handler.n_dofs(), false);
+    std::vector<bool> boundary_3_dof_x2 (dof_handler.n_dofs(), false);
 
-    std::set< types::boundary_id > boundary_id_2;
-    boundary_id_2.insert(2);
+    std::set< types::boundary_id > boundary_id_3;
+    boundary_id_3.insert(3);
 
 
     std::vector<bool> x2_components = {false, true};
@@ -1044,14 +1148,14 @@ namespace compressed_strip
 
     DoFTools::extract_boundary_dofs(dof_handler,
                                        x2_mask,
-                                       boundary_2_dof_x2,
-                                       boundary_id_2);
+                                       boundary_3_dof_x2,
+                                       boundary_id_3);
 
     // Starts by getting the residual in the current configuration.
     evaluation_point = present_solution;
 
     assemble_system_rhs();
-    apply_boundaries_to_rhs(&system_rhs, &boundary_2_dof_x2);
+    apply_boundaries_to_rhs(&system_rhs, &boundary_3_dof_x2);
 
     current_residual = system_rhs.l2_norm();
 
@@ -1069,7 +1173,7 @@ namespace compressed_strip
       // Find the step length and add it to the current solution.
       // This function also calls assemble_system_rhs() so we don't need to
       // do another rhs call.
-      line_search_and_add_step_length(current_residual, &boundary_2_dof_x2);
+      line_search_and_add_step_length(current_residual, &boundary_3_dof_x2);
 
       evaluation_point = present_solution;
       current_residual = system_rhs.l2_norm();
@@ -1098,10 +1202,10 @@ namespace compressed_strip
     (*solVectorDir) *= scalingVal;
 
     // get the dofs that we will apply dirichlet condition to
-    std::vector<bool> boundary_2_dof_x2 (dof_handler.n_dofs(), false);
+    std::vector<bool> boundary_3_dof_x2 (dof_handler.n_dofs(), false);
 
-    std::set< types::boundary_id > boundary_id_2;
-    boundary_id_2.insert(2);
+    std::set< types::boundary_id > boundary_id_3;
+    boundary_id_3.insert(3);
 
 
     std::vector<bool> x2_components = {false, true};
@@ -1109,8 +1213,8 @@ namespace compressed_strip
 
     DoFTools::extract_boundary_dofs(dof_handler,
                                        x2_mask,
-                                       boundary_2_dof_x2,
-                                       boundary_id_2);
+                                       boundary_3_dof_x2,
+                                       boundary_id_3);
 
     // Starts by getting the residual in the initial guess.
     present_lambda += lambdaDir*ds;
@@ -1120,7 +1224,7 @@ namespace compressed_strip
     update_F0(present_lambda);
 
     assemble_system_rhs();
-    apply_boundaries_to_rhs(&system_rhs, &boundary_2_dof_x2);
+    apply_boundaries_to_rhs(&system_rhs, &boundary_3_dof_x2);
 
     lambda_diff = present_lambda - previousLambda;
     solution_diff = evaluation_point;
@@ -1141,7 +1245,7 @@ namespace compressed_strip
 
       // Assemble rhs
       assemble_system_rhs();
-      apply_boundaries_to_rhs(&system_rhs, &boundary_2_dof_x2);
+      apply_boundaries_to_rhs(&system_rhs, &boundary_3_dof_x2);
 
       // Assemble the stiffness matrix
       assemble_system_matrix();
@@ -1149,12 +1253,12 @@ namespace compressed_strip
 
       // Assemble the drhs_dlambda
       assemble_drhs_dlambda();
-      apply_boundaries_to_rhs(&drhs_dlambda, &boundary_2_dof_x2);
+      apply_boundaries_to_rhs(&drhs_dlambda, &boundary_3_dof_x2);
 
       // Get the solution diff (bottom boarder of system mat)
       solution_diff = present_solution;
       solution_diff -= previousSolution;
-      apply_boundaries_to_rhs(&solution_diff, &boundary_2_dof_x2);
+      apply_boundaries_to_rhs(&solution_diff, &boundary_3_dof_x2);
 
       // get the bottom corner of system mat
       lambda_diff = present_lambda - previousLambda;
@@ -1166,7 +1270,7 @@ namespace compressed_strip
       solve_boarder_matrix_system();
 
       // add the update using the line search
-      line_search_and_add_step_length_PACA(current_residual, &boundary_2_dof_x2, &previousSolution, previousLambda, ds);
+      line_search_and_add_step_length_PACA(current_residual, &boundary_3_dof_x2, &previousSolution, previousLambda, ds);
 
       solution_diff = present_solution;
       solution_diff -= previousSolution;
@@ -1443,7 +1547,7 @@ namespace compressed_strip
     // output the eigenvalues to the file
     for (unsigned int i = 0 ; i < eigenvalues.size(); i ++)
     {
-     outputFile << std::setprecision(15) <<  eigenvalues[i] << std::endl;
+      outputFile << std::setprecision(15) <<  eigenvalues[i] << std::endl;
     }
 
     outputFile.close();
@@ -1465,7 +1569,7 @@ namespace compressed_strip
     FullMatrix<double> eigenvectors;
 
     // get the eigenvalues
-    system_matrix_full.compute_eigenvalues_symmetric(-0.3, 0.3, 1e-6, eigenvalues, eigenvectors);
+    system_matrix_full.compute_eigenvalues_symmetric(-10, 0.3, 1e-6, eigenvalues, eigenvectors);
 
     bool eigenvector_flag = false;
     unsigned int numNegVals = 0;
@@ -1741,13 +1845,25 @@ namespace compressed_strip
       strcat(output_directory, directory_name);
 
       // Read in the grid dimensions
+      unsigned int nonUniformFlag;
+      nonUniformFlag = 0;
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%u %u", &grid_dimensions[0], &grid_dimensions[1]);
-      if(valuesWritten != 2)
+      valuesWritten = sscanf(nextLine, "%u %u %u", &grid_dimensions[0], &grid_dimensions[1], &nonUniformFlag);
+      if(valuesWritten < 2)
       {
         fileReadErrorFlag = true;
         goto fileClose;
       }
+      else if(valuesWritten == 3)
+      {
+        if(nonUniformFlag == 1)
+          nonUniform_mesh_flag = true;
+        else
+          nonUniform_mesh_flag = false;
+      }
+      else
+        nonUniform_mesh_flag = false;
+
       grid_dimensions[0] *= number_unit_cells;
 
       // read in the absolute tolerance of newton iteration
@@ -1819,6 +1935,10 @@ namespace compressed_strip
     else
       std::cout << "Input file successfully read" << std::endl;
 
+    // set the domain dimensions
+    domain_dimensions[0] = number_unit_cells*2.0*(4.0*atan(1.0))/critical_frequency;
+    domain_dimensions[1] = 1.0;
+
     // make the output directory
     struct stat st;
     if (stat("./output", &st) == -1)
@@ -1863,14 +1983,21 @@ namespace compressed_strip
          mkdir(saved_state_dir, 0700);
 
 
-    // write the mesh
-    char mesh_file[MAXLINE];
-    strcpy(mesh_file, saved_state_dir);
-    strcat(mesh_file, "/mesh.msh");
-    std::ofstream mesh_out (mesh_file);
-    GridOut grid_out;
-    grid_out.set_flags(GridOutFlags::Msh (true, true));
-    grid_out.write_msh (triangulation, mesh_out);
+    // Triangulation
+    char triag_file[MAXLINE];
+    strcpy(triag_file, saved_state_dir);
+    strcat(triag_file, "/triag.dat");
+    std::ofstream triag_out (triag_file);
+    boost::archive::text_oarchive triag_ar(triag_out);
+    triangulation.save(triag_ar, 1);
+
+    // dof handler
+    char dof_file[MAXLINE];
+    strcpy(dof_file, saved_state_dir);
+    strcat(dof_file, "/dof.dat");
+    std::ofstream dof_out (dof_file);
+    boost::archive::text_oarchive dof_ar(dof_out);
+    dof_handler.save(dof_ar, 1);
 
     // Present Solution
     char present_solution_file[MAXLINE];
@@ -1884,6 +2011,7 @@ namespace compressed_strip
     strcpy(lambda_file, saved_state_dir);
     strcat(lambda_file, "/present_lambda.dat");
     std::ofstream lambda_out(lambda_file);
+
     lambda_out << present_lambda;
     lambda_out.close();
 
@@ -1903,14 +2031,23 @@ namespace compressed_strip
       exit(-1);
     }
 
-    // load the mesh
-    char mesh_file[MAXLINE];
-    strcpy(mesh_file, input_dir_path);
-    strcat(mesh_file, "/mesh.msh");
-    std::ifstream mesh_in (mesh_file);
-    GridIn<2> grid_in;
-    grid_in.attach_triangulation(triangulation);
-    grid_in.read_msh(mesh_in);
+
+    // Triangulation
+    char triag_file[MAXLINE];
+    strcpy(triag_file, input_dir_path);
+    strcat(triag_file, "/triag.dat");
+    std::ifstream triag_in (triag_file);
+    boost::archive::text_iarchive triag_ar(triag_in);
+    triangulation.load(triag_ar, 1);
+
+    // df_handler
+    dof_handler.distribute_dofs(fe);
+    char dof_file[MAXLINE];
+    strcpy(dof_file, input_dir_path);
+    strcat(dof_file, "/dof.dat");
+    std::ifstream dof_in (dof_file);
+    boost::archive::text_iarchive dof_ar(dof_in);
+    dof_handler.load(dof_ar, 1);
 
     // Present Solution
     char present_solution_file[MAXLINE];
@@ -1919,6 +2056,7 @@ namespace compressed_strip
     std::ifstream solution_in (present_solution_file);
     boost::archive::text_iarchive solution_ar(solution_in);
     present_solution.load(solution_ar, 1);
+    evaluation_point = present_solution;
 
     // lambda value
     char lambda_file[MAXLINE];
@@ -1930,8 +2068,13 @@ namespace compressed_strip
       std::cout << "Error reading file: " << lambda_file << " . Exiting." << std::endl;
       exit(-1);
     }
-    lambda_in >> present_lambda;
+
+    lambda_in >> std::setprecision(15) >> present_lambda;
     lambda_in.close();
+
+    update_F0(present_lambda);
+
+    fileLoadFlag = true;
   }
 
   void ElasticProblem::load_intial_tangent()
@@ -1953,7 +2096,72 @@ namespace compressed_strip
     initial_solution_tangent *= scalingVal;
     initial_lambda_tangent *= scalingVal;
 
+
   }
+
+  void ElasticProblem::renumber_boundary_ids()
+  {
+
+    // renumber boundary ids because they have problems being saved for nonuniform mesh.
+    typename Triangulation<DIM>::active_cell_iterator cell =
+     triangulation.begin_active(), endc = triangulation.end();
+    for (; cell != endc; ++cell)
+      for (unsigned int f = 0; f < GeometryInfo<DIM>::faces_per_cell; ++f)
+      {
+
+        const Point<DIM> face_center = cell->face(f)->center();
+        if (fabs(face_center[0] + domain_dimensions[0]/2.0) < 1e-4)  // left
+        {
+          cell->face(f)->set_boundary_id (1);
+        }
+        else if (fabs(face_center[0] - domain_dimensions[0]/2.0) < 1e-4)
+        {// right
+          cell->face(f)->set_boundary_id (2);
+        }
+        else if (fabs(face_center[1]) < 1e-6) //bottom
+        {
+          cell->face(f)->set_boundary_id (3);
+        }
+        else if (fabs(face_center[1] - 1.0) < 1e-6) //top
+        {
+         cell->face(f)->set_boundary_id (4);
+
+        }
+
+      }
+  }
+
+  void ElasticProblem::print_dof_coords_and_vals(unsigned int index)
+  {
+    unsigned int number_dofs = dof_handler.n_dofs();
+
+    std::string fileName = "dofsAndVals_";
+    fileName += std::to_string(index);
+    fileName += ".dat";
+    std::ofstream dof_out;
+    dof_out.open(fileName);
+
+    // get the coords of the dofs
+    std::vector<Point<DIM>> support_points(number_dofs);
+    MappingQ1<DIM> mapping;
+    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
+
+    std::vector<bool> x2_components = {false, true};
+    ComponentMask x2_mask(x2_components);
+
+    std::vector<bool> is_x2_comp(number_dofs);
+
+    DoFTools::extract_dofs(dof_handler, x2_mask, is_x2_comp);
+
+    for(unsigned int i = 0 ; i < number_dofs; i ++)
+    {
+      dof_out << "(" << support_points[i](0) << ", " << support_points[i](1) << ")   "  << is_x2_comp[i] << "     " << evaluation_point[i] << std::endl;
+    }
+
+    dof_out.close();
+
+  }
+
 }
 
 #endif // COMPRESSEDSTRIPPACABLOCH_CC_

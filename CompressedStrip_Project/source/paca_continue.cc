@@ -1,5 +1,5 @@
 #include "CompressedStripPacaBloch.h"
-
+#include <fstream>
 
 using namespace dealii;
 int main ()
@@ -25,11 +25,16 @@ int main ()
   std::cout << "   Number of degrees of freedom: "
             << ep.get_n_dofs()
             << std::endl << std::endl;
+  std::cout << "   Starting at lambda = " << ep.get_present_lambda() << std::endl;
+
+
 
   Vector<double> previous_solution = ep.present_solution;
 
-  double number_negative_eigs = ep.get_system_eigenvalues(ep.get_present_lambda(), 123456);
+  unsigned int number_negative_eigs = ep.get_system_eigenvalues(ep.get_present_lambda(), 123456);
+
   std::cout << "    Number negative Eigenvalues : " << number_negative_eigs << std::endl;
+exit(-1);
 
   ep.set_unstable_eigenvector_as_initial_tangent(number_negative_eigs);
 
@@ -37,12 +42,7 @@ int main ()
   double scalingVal = sqrt(1 - ep.initial_lambda_tangent*ep.initial_lambda_tangent);
   ep.initial_solution_tangent *= -1.0*scalingVal;
 
-//  ep.present_solution = ep.unstable_eigenvector;
-//  ep.output_results(123457);
-//   exit(-1);
-
   ep.set_present_lambda(ep.get_present_lambda() -  5e-5);
-  ep.update_F0(ep.get_present_lambda());
   ep.newton_iterate();
 
 
@@ -70,7 +70,6 @@ int main ()
   std::vector<double> displacement_magnitude;
 
   double lambda_tangent = 0.0;
- // double num_negative_eigs = 0;
   for(unsigned int i = 1; i < ep.get_load_steps(); i ++)
   {
 
@@ -106,7 +105,7 @@ int main ()
 
 
   }
-  ep.output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude, 3);
+  ep.output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude, 2);
 
   return 0;
 }

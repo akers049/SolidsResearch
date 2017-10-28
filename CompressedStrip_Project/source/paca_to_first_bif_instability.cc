@@ -1,4 +1,5 @@
 #include "CompressedStripPacaBloch.h"
+#include <fstream>
 
 using namespace dealii;
 int main ()
@@ -45,11 +46,11 @@ int main ()
 
   // set the eigenvector for the unstable mode
   ep.set_unstable_eigenvector_as_initial_tangent(1);
+  ep.initial_solution_tangent *= -1.0;
 
   Vector<double> previous_solution = ep.present_solution;
   double previous_lambda = lambda_start;
 
-//  ep.set_present_lambda(lambda_start - 1e-6);
 
   ep.path_follow_PACA_iterate( &(ep.initial_solution_tangent), ep.initial_lambda_tangent, ep.get_ds());
   ep.output_results (2);
@@ -72,7 +73,7 @@ int main ()
   unsigned int num_negative_eigs = 0;
   unsigned int prev_num_negative_eigs = 0;
   unsigned int step_number = 0;
- // unsigned int step_number = 1;
+
   for(unsigned int i = 1; i < ep.get_load_steps(); i ++)
   {
 
@@ -115,6 +116,9 @@ int main ()
      std::cout << "\n Eigenvalue Crossing Found. Outputting current state and stopping" << std::endl;
      break;
    }
+
+   if (i == 120)
+     break;
 
   }
   ep.output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude, 1);
