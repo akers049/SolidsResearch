@@ -1,7 +1,7 @@
 /*
  * bloch_eigs_first_bif.cc
  *
- *  Created on: Sep 27, 2017
+ *  Created on: Nov 1, 2017
  *      Author: andrew
  */
 
@@ -19,7 +19,11 @@ int main ()
   std::cin >> fileName;
   ep.read_input_file(fileName);
 
-  ep.create_mesh();
+  unsigned int state_index;
+  std::cout << "Please enter an the index of the state: " << std::endl;
+  std::cin >> state_index;
+
+  ep.load_state(state_index);
 
   ep.setup_system();
 
@@ -33,41 +37,30 @@ int main ()
             << std::endl << std::endl;
 
 
-  // get the critical lambda value
-  ep.evaluation_point = ep.present_solution;
-
-  double lambda_c = ep.bisect_find_lambda_critical(ep.critical_lambda_analytical - 0.05,
-                                               ep.critical_lambda_analytical + 0.05, 1e-6, 50);
-
-  std::cout << "The lambda_c is: " << lambda_c << std::endl;
-
-  ep.update_F0(0);
-  ep.newton_iterate();
-  ep.output_results (0);
-  ep.assemble_system_energy_and_congugate_lambda();
-
-
-  double lambda_start = lambda_c + 1e-6;
-  ep.update_F0(lambda_start);
-  ep.newton_iterate();
-  ep.output_results (1);
-
-  // set the eigenvector for the unstable mode
-  ep.set_present_lambda(lambda_start);
-  ep.set_unstable_eigenvector_as_initial_tangent(1);
-
   Vector<double> previous_solution = ep.present_solution;
-  double previous_lambda = lambda_start;
 
-  ep.set_present_lambda(lambda_start - 1e-6);
+  unsigned int number_negative_eigs = ep.get_system_eigenvalues(ep.get_present_lambda(), -1);
+
+  std::cout << "    Number negative Eigenvalues : " << number_negative_eigs << std::endl;
+
+  ep.set_unstable_eigenvector_as_initial_tangent(number_negative_eigs);
+
+  ep.initial_lambda_tangent = 0.5;
+  double scalingVal = sqrt(1 - ep.initial_lambda_tangent*ep.initial_lambda_tangent);
+  ep.initial_solution_tangent *= -1.0*scalingVal;
+
+  ep.set_present_lambda(ep.get_present_lambda() -  5e-5);
+  ep.newton_iterate();
+
+
+  double previous_lambda = ep.get_present_lambda();
+  previous_solution = ep.present_solution;
 
   ep.path_follow_PACA_iterate(&(ep.initial_solution_tangent), ep.initial_lambda_tangent, ep.get_ds());
-  ep.output_results (2);
 
   // define variables for the tangent to next start point.
   Vector<double> solution_tangent;
   double lambda_tangent;
-  double scalingVal;
 
   std::vector<double> lambda_values(ep.get_load_steps());
   std::vector<double> congugate_lambda_values(ep.get_load_steps());

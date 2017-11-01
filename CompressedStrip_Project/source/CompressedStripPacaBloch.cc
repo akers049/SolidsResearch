@@ -44,10 +44,11 @@ namespace compressed_strip
   {
     // this is a scalar function, so make sure component is zero...
     Assert (component == 0, ExcNotImplemented());
+    Assert (p.dimension == 2, ExcNotImplemented())
 
     // Put your function for nu. p(0) is x1 value, p(1) is the x2 value
 
-    double nuValue = NU_VALUE + 0.0*(p(1) - 0.5);
+    double nuValue = NU_VALUE;
 
     return nuValue;
   }
@@ -68,9 +69,14 @@ namespace compressed_strip
     // this is a scalar function, so make sure component is zero...
     Assert (component == 0, ExcNotImplemented());
 
-    // Put your function for mu. p(0) is x1 value, p(1) is the x2 value
-
-    double muValue = mu0*exp(kappa*p(1));
+    // function for mu. p(0) is x1 value, p(1) is the x2 value
+    double muValue;
+    if (pieceConstFlag == true)
+    {
+      muValue = (p(1) >= L1 ? kappa : mu0 );
+    }
+    else
+      muValue = mu0*exp(kappa*p(1));
 
     return muValue;
   }
@@ -1554,7 +1560,7 @@ namespace compressed_strip
 
   }
 
-  void ElasticProblem::set_unstable_eigenvector_as_initial_tangent(unsigned int index)
+  void ElasticProblem::set_unstable_eigenvector_as_initial_tangent(unsigned int indx)
   {
 
     evaluation_point = present_solution;
@@ -1581,7 +1587,7 @@ namespace compressed_strip
         numNegVals ++;
 
         // set the eigenvector corresponnding the negative eigenvalue specified by index
-        if (numNegVals == index)
+        if (numNegVals == indx)
         {
           eigenvector_flag = true;
 
@@ -1596,7 +1602,7 @@ namespace compressed_strip
 
     if (eigenvector_flag == false)
     {
-      std::cout << "Unable to set unstable eigenvetor because there was not " << index << " negative eigenvalues. Exiting" << std::endl;
+      std::cout << "Unable to set unstable eigenvetor because there was not " << indx << " negative eigenvalues. Exiting" << std::endl;
       exit(-1);
     }
     // So the eigenvector had bad entries for the constrained dofs, so need to distribute the constraints
@@ -1612,6 +1618,9 @@ namespace compressed_strip
   double ElasticProblem::bisect_find_lambda_critical(double lowerBound, double upperBound,
                                                           double tol, unsigned int maxIter)
   {
+    if (lowerBound < 0.0)
+      lowerBound = 0.0;
+
     unsigned int N = 1;
     double middleVal = 0.0;
     while ( N < maxIter)
@@ -1874,15 +1883,23 @@ namespace compressed_strip
         fileReadErrorFlag = true;
       }
 
-      // read in exponential growth parameter
+      // read in exponential growth parameter and possibly the l1 value
+      double l1;
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%lg", &kappa);
-      if(valuesWritten != 1)
+      valuesWritten = sscanf(nextLine, "%lg %lg", &kappa, &l1);
+      if(valuesWritten < 1)
       {
         fileReadErrorFlag = true;
         goto fileClose;
       }
-      mu = new MuFunction(kappa);
+      else if (valuesWritten == 2)
+      {
+        mu = new MuFunction(kappa, l1);
+      }
+      else
+        mu = new MuFunction(kappa);
+
+
 
       // read in critical lambda
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
@@ -1969,7 +1986,7 @@ namespace compressed_strip
     while ((strncmp("#", nextLinePtr, 1) == 0) || (strlen(nextLinePtr) == 0));
   }
 
-  void ElasticProblem::save_current_state()
+  void ElasticProblem::save_current_state(unsigned int indx)
   {
     // create the output directory if it doesnt exist
 
@@ -1983,10 +2000,15 @@ namespace compressed_strip
          mkdir(saved_state_dir, 0700);
 
 
+    char index_char[32];
+    sprintf(index_char, "%u", indx);
+
     // Triangulation
     char triag_file[MAXLINE];
     strcpy(triag_file, saved_state_dir);
-    strcat(triag_file, "/triag.dat");
+    strcat(triag_file, "/triag_");
+    strcat(triag_file, index_char);
+    strcat(triag_file, ".dat");
     std::ofstream triag_out (triag_file);
     boost::archive::text_oarchive triag_ar(triag_out);
     triangulation.save(triag_ar, 1);
@@ -1994,7 +2016,9 @@ namespace compressed_strip
     // dof handler
     char dof_file[MAXLINE];
     strcpy(dof_file, saved_state_dir);
-    strcat(dof_file, "/dof.dat");
+    strcat(dof_file, "/dof_");
+    strcat(dof_file, index_char);
+    strcat(dof_file, ".dat");
     std::ofstream dof_out (dof_file);
     boost::archive::text_oarchive dof_ar(dof_out);
     dof_handler.save(dof_ar, 1);
@@ -2002,7 +2026,9 @@ namespace compressed_strip
     // Present Solution
     char present_solution_file[MAXLINE];
     strcpy(present_solution_file, saved_state_dir);
-    strcat(present_solution_file, "/present_solution.dat");
+    strcat(present_solution_file, "/present_solution_");
+    strcat(present_solution_file, index_char);
+    strcat(present_solution_file, ".dat");
     std::ofstream solution_out (present_solution_file);
     boost::archive::text_oarchive solution_ar(solution_out);
     present_solution.save(solution_ar, 1);
@@ -2017,7 +2043,7 @@ namespace compressed_strip
 
   }
 
-  void ElasticProblem::load_state()
+  void ElasticProblem::load_state(unsigned int indx)
   {
     // create the output directory
 
@@ -2031,11 +2057,15 @@ namespace compressed_strip
       exit(-1);
     }
 
+    char index_char[32];
+    sprintf(index_char, "%u", indx);
 
     // Triangulation
     char triag_file[MAXLINE];
     strcpy(triag_file, input_dir_path);
-    strcat(triag_file, "/triag.dat");
+    strcat(triag_file, "/triag_");
+    strcat(triag_file, index_char);
+    strcat(triag_file, ".dat");
     std::ifstream triag_in (triag_file);
     boost::archive::text_iarchive triag_ar(triag_in);
     triangulation.load(triag_ar, 1);
@@ -2044,7 +2074,9 @@ namespace compressed_strip
     dof_handler.distribute_dofs(fe);
     char dof_file[MAXLINE];
     strcpy(dof_file, input_dir_path);
-    strcat(dof_file, "/dof.dat");
+    strcat(dof_file, "/dof_");
+    strcat(dof_file, index_char);
+    strcat(dof_file, ".dat");
     std::ifstream dof_in (dof_file);
     boost::archive::text_iarchive dof_ar(dof_in);
     dof_handler.load(dof_ar, 1);
@@ -2052,7 +2084,9 @@ namespace compressed_strip
     // Present Solution
     char present_solution_file[MAXLINE];
     strcpy(present_solution_file, input_dir_path);
-    strcat(present_solution_file, "/present_solution.dat");
+    strcat(present_solution_file, "/present_solution_");
+    strcat(present_solution_file, index_char);
+    strcat(present_solution_file, ".dat");
     std::ifstream solution_in (present_solution_file);
     boost::archive::text_iarchive solution_ar(solution_in);
     present_solution.load(solution_ar, 1);
@@ -2131,12 +2165,12 @@ namespace compressed_strip
       }
   }
 
-  void ElasticProblem::print_dof_coords_and_vals(unsigned int index)
+  void ElasticProblem::print_dof_coords_and_vals(unsigned int indx)
   {
     unsigned int number_dofs = dof_handler.n_dofs();
 
     std::string fileName = "dofsAndVals_";
-    fileName += std::to_string(index);
+    fileName += std::to_string(indx);
     fileName += ".dat";
     std::ofstream dof_out;
     dof_out.open(fileName);

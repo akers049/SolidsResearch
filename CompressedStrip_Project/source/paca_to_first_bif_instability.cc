@@ -28,8 +28,8 @@ int main ()
 
   // get the critical lambda value
 
-  double lambda_c = ep.bisect_find_lambda_critical(ep.critical_lambda_analytical - 0.02,
-                                               ep.critical_lambda_analytical + 0.02, 1e-6, 50);
+  double lambda_c = ep.bisect_find_lambda_critical(ep.critical_lambda_analytical - 0.05,
+                                               ep.critical_lambda_analytical + 0.05, 1e-6, 50);
 
   std::cout << "The lambda_c is: " << lambda_c << std::endl;
 
@@ -46,7 +46,7 @@ int main ()
 
   // set the eigenvector for the unstable mode
   ep.set_unstable_eigenvector_as_initial_tangent(1);
-  ep.initial_solution_tangent *= -1.0;
+ // ep.initial_solution_tangent *= -1.0;
 
   Vector<double> previous_solution = ep.present_solution;
   double previous_lambda = lambda_start;
@@ -111,19 +111,15 @@ int main ()
    num_negative_eigs = ep.get_system_eigenvalues(ep.get_present_lambda(), i);
    std::cout << "    Number negative Eigenvalues : " << num_negative_eigs << std::endl;
    std::cout << "    Step Number : " << step_number << std::endl;
-   if ((i > 100 && num_negative_eigs == (prev_num_negative_eigs + 1)))
+   if ((i > 40 && num_negative_eigs == (prev_num_negative_eigs + 1)))
    {
      std::cout << "\n Eigenvalue Crossing Found. Outputting current state and stopping" << std::endl;
      break;
    }
-
-   if (i == 120)
-     break;
-
   }
   ep.output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude, 1);
 
-  ep.save_current_state();
+  ep.save_current_state(0);
 
   return 0;
 }

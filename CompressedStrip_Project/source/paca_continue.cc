@@ -13,7 +13,7 @@ int main ()
   ep.read_input_file(fileName);
 
   // read it the current state
-  ep.load_state();
+  ep.load_state(0);
 
   ep.setup_system();
 
@@ -34,11 +34,10 @@ int main ()
   unsigned int number_negative_eigs = ep.get_system_eigenvalues(ep.get_present_lambda(), 123456);
 
   std::cout << "    Number negative Eigenvalues : " << number_negative_eigs << std::endl;
-exit(-1);
 
   ep.set_unstable_eigenvector_as_initial_tangent(number_negative_eigs);
 
-  ep.initial_lambda_tangent = -0.5;
+  ep.initial_lambda_tangent = 0.5;
   double scalingVal = sqrt(1 - ep.initial_lambda_tangent*ep.initial_lambda_tangent);
   ep.initial_solution_tangent *= -1.0*scalingVal;
 

@@ -49,6 +49,14 @@ ADD_EXECUTABLE(bloch_eigs_first_bif ${CMAKE_SOURCE_DIR}/source/bloch_eigs_first_
 DEAL_II_SETUP_TARGET(bloch_eigs_first_bif)
 TARGET_LINK_LIBRARIES(bloch_eigs_first_bif CompressedStripPacaBloch)
 
+ADD_EXECUTABLE(find_first_bif_load ${CMAKE_SOURCE_DIR}/source/find_first_bif_load.cc)
+DEAL_II_SETUP_TARGET(find_first_bif_load)
+TARGET_LINK_LIBRARIES(find_first_bif_load CompressedStripPacaBloch)
+
+ADD_EXECUTABLE(bloch_eigs_branch ${CMAKE_SOURCE_DIR}/source/bloch_eigs_branch.cc)
+DEAL_II_SETUP_TARGET(bloch_eigs_branch)
+TARGET_LINK_LIBRARIES(bloch_eigs_branch CompressedStripPacaBloch)
+
 
 # Define a distclean target to remove every generated file:
 ADD_CUSTOM_TARGET(distclean
