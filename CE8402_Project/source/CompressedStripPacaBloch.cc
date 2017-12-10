@@ -85,19 +85,35 @@ namespace compressed_strip
 
   // computes right hand side values if we were to have body forces. But it just
   // always returns zeros because we don't.
-  void right_hand_side (const std::vector<Point<DIM> > &points,
+  void ElasticProblem::right_hand_side (const std::vector<Point<DIM> > &points,
                         std::vector<Tensor<1, DIM> >   &values)
   {
     Assert (values.size() == points.size(),
             ExcDimensionMismatch (values.size(), points.size()));
     Assert (DIM >= 2, ExcNotImplemented());
 
-
-    // not imposing body forces or tractions
-    for (unsigned int point_n = 0; point_n < points.size(); ++point_n)
+    if (problem_2_flag == false)
     {
-      values[point_n][0] = 0.0;
-      values[point_n][1] = 0.0;
+      for (unsigned int point_n = 0; point_n < points.size(); ++point_n)
+      {
+//        std::cout << points[point_n][0]  << "  " << points[point_n][1] <<std::endl;
+//        if (fabs(points[point_n][0] - domain_dimensions[0]) < 1e-6)
+//        {
+//          values[point_n][0] = -load_val;
+//        }
+//        else
+          values[point_n][0] = 0.0;
+
+        values[point_n][1] = 0.0;
+      }
+    }
+    else
+    {
+      for (unsigned int point_n = 0; point_n < points.size(); ++point_n)
+      {
+        values[point_n][0] = 0.0;
+        values[point_n][1] = 0.0;
+      }
     }
   }
 
@@ -223,6 +239,7 @@ namespace compressed_strip
     if(problem_2_flag)
     {
       corner_dofs.resize(4, 0);
+      inside_dofs.resize(4, 0);
 
       const unsigned int  number_dofs = dof_handler.n_dofs();
 
@@ -242,36 +259,58 @@ namespace compressed_strip
       for(unsigned int i = 0; i < number_dofs; i++)
       {
         if( (fabs(support_points[i](0) - domain_dimensions[0]) < 1e-6) &&
-            ((fabs(support_points[i](1)) - domain_dimensions[1]/2.0) < 1e-6 ))
+            (fabs(fabs(support_points[i](1)) - domain_dimensions[1]/2.0) < 1e-6 ))
           {
             if(!is_x2_comp[i])
             {
-              if(support_points[i](1) < 0.0)
+              if(fabs(support_points[i](1) + domain_dimensions[1]/2.0) < 1e-6)
                 corner_dofs[0] = i;
-              else
+              else if((fabs(support_points[i](1) - domain_dimensions[1]/2.0) < 1e-6))
                 corner_dofs[2] = i;
             }
             else
             {
-              if(support_points[i](1) < 0.0)
+              if(fabs(support_points[i](1) + domain_dimensions[1]/2.0) < 1e-6)
                 corner_dofs[1] = i;
-              else
+              else if((fabs(support_points[i](1) - domain_dimensions[1]/2.0) < 1e-6))
                 corner_dofs[3] = i;
             }
 
+          }
+
+        if( (fabs(support_points[i](0) + domain_dimensions[0]/grid_dimensions[0] - domain_dimensions[0]) < 1e-6) &&
+            (fabs(fabs(support_points[i](1)) - domain_dimensions[1]/2.0) < 1e-6 ))
+          {
+            if(!is_x2_comp[i])
+            {
+              if(fabs(support_points[i](1) + domain_dimensions[1]/2.0) < 1e-6)
+                inside_dofs[0] = i;
+              else if((fabs(support_points[i](1) - domain_dimensions[1]/2.0) < 1e-6))
+                inside_dofs[2] = i;
+            }
+            else
+            {
+              if(fabs(support_points[i](1) + domain_dimensions[1]/2.0) < 1e-6)
+                inside_dofs[1] = i;
+              else if((fabs(support_points[i](1) - domain_dimensions[1]/2.0) < 1e-6))
+                inside_dofs[3] = i;
+            }
 
           }
       }
 
       for (unsigned int i = 0; i < corner_dofs.size(); i++)
+      {
         for (unsigned int j = 0; j < corner_dofs.size(); j++)
           dsp.add(corner_dofs[i], corner_dofs[j]);
+      }
 
     }
 
     sparsity_pattern.copy_from (dsp);
 
 
+//    GridTools::distort_random(0.4, triangulation, true);
 
     system_matrix.reinit (sparsity_pattern);
 
@@ -397,14 +436,20 @@ namespace compressed_strip
 
     system_matrix = 0.0;
 
-    QGauss<DIM>  quadrature_formula(2);
+    QGauss<1> quad_2(2);
+    QGauss<1> quad_1(1);
 
-    FEValues<DIM> fe_values (fe, quadrature_formula,
+    QAnisotropic<DIM> quadrature_problem_2(quad_1, quad_2);
+
+
+    FEValues<DIM> fe_values (fe, quadrature_problem_2,
                              update_values   | update_gradients |
                              update_quadrature_points | update_JxW_values);
 
     const unsigned int   dofs_per_cell = fe.dofs_per_cell;
-    const unsigned int   n_q_points    = quadrature_formula.size();
+ //   unsigned int   n_q_points    = quadrature_formula.size();
+ //   if(problem_2_flag)
+    unsigned int n_q_points = quadrature_problem_2.size();
 
     FullMatrix<double>   cell_matrix (dofs_per_cell, dofs_per_cell);
 
@@ -450,7 +495,7 @@ namespace compressed_strip
             {
               E_dot_hat_n[i][j] = 0.5*(
                   fe_values.shape_grad(n, q_point)[i]*old_solution_gradients[q_point][component_n][j] +
-                  fe_values.shape_grad(n, q_point)[j]*old_solution_gradients[q_point][i][component_n] +
+                  fe_values.shape_grad(n, q_point)[j]*old_solution_gradients[q_point][component_n][i] +
                   (i == component_n ? 1.0 : 0.0)*fe_values.shape_grad(n, q_point)[j] +
                   (j == component_n ? 1.0: 0.0)*fe_values.shape_grad(n,q_point)[i]);
             }
@@ -474,8 +519,8 @@ namespace compressed_strip
                 dE_dot_hat_n_dU_m[i][j] = 0.5*(
                     (component_m == component_n ? 1.0 : 0.0)*
                             fe_values.shape_grad(n, q_point)[i]*fe_values.shape_grad(m, q_point)[j] +
-                    (i == component_m ? 1.0 : 0.0)*
-                            fe_values.shape_grad(m, q_point)[component_n]*fe_values.shape_grad(n, q_point)[j]
+                    (component_n == component_m ? 1.0 : 0.0)*
+                            fe_values.shape_grad(m, q_point)[j]*fe_values.shape_grad(n, q_point)[i]
                     );
               }
             for(unsigned int i = 0; i<DIM; ++i)
@@ -513,14 +558,20 @@ namespace compressed_strip
 
     system_rhs = 0.0;
 
-    QGauss<DIM>  quadrature_formula(2);
+    QGauss<1> quad_2(2);
+    QGauss<1> quad_1(1);
 
-    FEValues<DIM> fe_values (fe, quadrature_formula,
+    QAnisotropic<DIM> quadrature_problem_2(quad_1, quad_2);
+
+
+    FEValues<DIM> fe_values (fe, quadrature_problem_2,
                              update_values   | update_gradients |
                              update_quadrature_points | update_JxW_values);
 
     const unsigned int   dofs_per_cell = fe.dofs_per_cell;
-    const unsigned int   n_q_points    = quadrature_formula.size();
+    // unsigned int   n_q_points    = quadrature_formula.size();
+
+      unsigned int n_q_points = quadrature_problem_2.size();
 
     Vector<double>       cell_rhs (dofs_per_cell);
 
@@ -568,7 +619,7 @@ namespace compressed_strip
             {
               E_dot_hat_n[i][j] = 0.5*(
                   fe_values.shape_grad(n, q_point)[i]*old_solution_gradients[q_point][component_n][j] +
-                  fe_values.shape_grad(n, q_point)[j]*old_solution_gradients[q_point][i][component_n] +
+                  fe_values.shape_grad(n, q_point)[j]*old_solution_gradients[q_point][component_n][i] +
                   (i == component_n ? 1.0 : 0.0)*fe_values.shape_grad(n, q_point)[j] +
                   (j == component_n ? 1.0: 0.0)*fe_values.shape_grad(n,q_point)[i]);
             }
@@ -578,11 +629,10 @@ namespace compressed_strip
               for(unsigned int l = 0; l<DIM; ++l)
                 for(unsigned int m = 0; m<DIM; ++m)
                 {
-
                   cell_rhs[n] += D[i][j][l][m]*E[l][m]*E_dot_hat_n[i][j]*fe_values.JxW(q_point);
                 }
 
-        //  cell_rhs(n) += fe_values.shape_value(n, q_point)*rhs_values[q_point][component_n]*fe_values.JxW(q_point);
+       //   cell_rhs[n] += fe_values.shape_value(n, q_point)*rhs_values[q_point][component_n]*fe_values.JxW(q_point);
         }
       }
 
@@ -617,12 +667,12 @@ namespace compressed_strip
 
       double a0 = load_val/((u21 - u11)*(u21 - u11) + (u22 + h - u12)*(u22 + h - u12));
 
-
       system_rhs[corner_dofs[0]] -= a0*(h + u22 - u12);
       system_rhs[corner_dofs[1]] -= a0*(u11 - u21);
 
       system_rhs[corner_dofs[2]] -= -a0*(h + u22 - u12);
       system_rhs[corner_dofs[3]] -= -a0*(u11 - u21);
+
     }
     else
     {
@@ -682,39 +732,63 @@ namespace compressed_strip
       u12 = evaluation_point[x12];
       u21 = evaluation_point[x21];
       u22 = evaluation_point[x22];
-
       double h = domain_dimensions[1];
+
+//      std::cout << u11 << " " << u12 << " " << u21 << " " << u22 << std::endl;
+//      std::cout << ((u21 - u11)*(u21 - u11) + (u22 + h - u12)*(u22 + h - u12)) << std::endl;
+
+
 
       double a0 = 1.0/((u21 - u11)*(u21 - u11) + (u22 + h - u12)*(u22 + h - u12));
       double a1 = a0*a0;
       a0 *= load_val;
       a1 *= -load_val;
 
+      double dF11_du11 = -a1*2*(u21 - u11)*(u22 + h - u12);
+      double dF11_du12 = -a1*2*(u22 + h - u12)*(u22 + h - u12) - a0;
+      double dF11_du21 = a1*2*(u21 - u11)*(u22 + h - u12);
+      double dF11_du22 =  a1*2*(u22 + h - u12)*(u22 + h - u12) + a0;
 
-      double dF11_du11 = a1*2*(u21 - u11)*(u12 - u22 -h);
-      double dF11_du12 = a1*2*(u22 + h - u12)*(u12 - u22 - h) - a0;
-      double dF11_du21 = -a1*2*(u21 - u11)*(u12 - u22 -h);
-      double dF11_du22 =  -a1*2*(u22 + h - u12)*(u12 - u22 - h) + a0;
 
-      double dF12_du11 = a1*2*(u21 - u11)*(u21 - u11) + a0;
-      double dF12_du12 = a1*2*(u22 + h - u12)*(u21 - u11);
-      double dF12_du21 = -a1*2*(u21 - u11)*(u21 - u11) - a0;
-      double dF12_du22 = -a1*2*(u22 + h - u12)*(u21 - u11);
+      double dF12_du11 = -a1*2*(u21 - u11)*(u11 - u21) + a0;
+      double dF12_du12 = -a1*2*(u22 + h - u12)*(u11 - u21);
+      double dF12_du21 = a1*2*(u21 - u11)*(u11 - u21) - a0;
+      double dF12_du22 = a1*2*(u22 + h - u12)*(u11 - u21);
 
-      system_matrix.add(x11, x11, dF11_du11);
-      system_matrix.add(x11, x12, dF11_du12);
-      system_matrix.add(x11, x21, dF11_du21);
-      system_matrix.add(x11, x22, dF11_du22);
+//      system_matrix.add(x11, x11, -dF11_du11);
+//      system_matrix.add(x12, x11, -dF11_du12);
+//      system_matrix.add(x21, x11, -dF11_du21);
+//      system_matrix.add(x22, x11, -dF11_du22);
+//
+//      system_matrix.add(x11, x12, -dF12_du11);
+//      system_matrix.add(x12, x12, -dF12_du12);
+//      system_matrix.add(x21, x12, -dF12_du21);
+//      system_matrix.add(x22, x12, -dF12_du22);
+//
+//      system_matrix.add(x11, x21, dF11_du11);
+//      system_matrix.add(x12, x21, dF11_du12);
+//      system_matrix.add(x21, x21, dF11_du21);
+//      system_matrix.add(x22, x21, dF11_du22);
+//
+//      system_matrix.add(x11, x22, dF12_du11);
+//      system_matrix.add(x12, x22, dF12_du12);
+//      system_matrix.add(x21, x22, dF12_du21);
+//      system_matrix.add(x22, x22, dF12_du22);
 
-      system_matrix.add(x12, x11, dF12_du11);
-      system_matrix.add(x12, x12, dF12_du12);
-      system_matrix.add(x12, x21, dF12_du21);
-      system_matrix.add(x12, x22, dF12_du22);
+      system_matrix.add(x11, x11, -dF11_du11);
+      system_matrix.add(x11, x12, -dF11_du12);
+      system_matrix.add(x11, x21, -dF11_du21);
+      system_matrix.add(x11, x22, -dF11_du22);
 
-      system_matrix.add(x21, x11, -dF11_du11);
-      system_matrix.add(x21, x12, -dF11_du12);
-      system_matrix.add(x21, x21, -dF11_du21);
-      system_matrix.add(x21, x22, -dF11_du22);
+      system_matrix.add(x12, x11, -dF12_du11);
+      system_matrix.add(x12, x12, -dF12_du12);
+      system_matrix.add(x12, x21, -dF12_du21);
+      system_matrix.add(x12, x22, -dF12_du22);
+
+      system_matrix.add(x21, x11, dF11_du11);
+      system_matrix.add(x21, x12, dF11_du12);
+      system_matrix.add(x21, x21, dF11_du21);
+      system_matrix.add(x21, x22, dF11_du22);
 
       system_matrix.add(x22, x11, dF12_du11);
       system_matrix.add(x22, x12, dF12_du12);
@@ -1404,27 +1478,6 @@ namespace compressed_strip
 
     dof_out.close();
 
-  }
-
-  void ElasticProblem::set_D(double mu, double nu)
-  {
-    Tensor<4, DIM> tmp;
-
-    double scalingFactor = mu/(1.0 - nu*nu);
-    double val = (1 - nu)/4.0;
-
-    tmp[1][1][1][1] = 1.0;
-    tmp[1][1][2][2] = nu;
-    tmp[2][2][1][1] = nu;
-    tmp[2][2][2][2] = 1.0;
-    tmp[1][2][1][2] = val;
-    tmp[1][2][2][1] = val;
-    tmp[2][1][1][2] = val;
-    tmp[2][1][2][1] = val;
-
-    tmp *= scalingFactor;
-
-    D = tmp;
   }
 
 }

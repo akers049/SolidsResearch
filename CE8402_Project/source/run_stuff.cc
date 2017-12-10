@@ -31,6 +31,7 @@ int main ()
 
   ep.set_load_val(0.0);
   double load_step = ep.get_final_load()/ep.get_load_steps();
+    std::cout << load_step << "\n";
   for(unsigned int i = 0; i < ep.get_load_steps(); i++)
   {
 

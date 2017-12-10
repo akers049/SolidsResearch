@@ -175,6 +175,9 @@ namespace compressed_strip
 
 
   private:
+    void right_hand_side (const std::vector<Point<DIM> > &points,
+                          std::vector<Tensor<1, DIM> >   &values);
+
     Tensor<4, DIM> get_the_D(double mu, double nu);
     Tensor<2,DIM> get_deformation_gradient(std::vector<Tensor<1,DIM> > old_solution_gradient);
     Tensor<2, DIM> get_lagrangian_strain(Tensor<2, DIM> F);
@@ -197,9 +200,6 @@ namespace compressed_strip
 
     void getNextDataLine( FILE* const filePtr, char* nextLinePtr,
                             int const maxSize, int* const endOfFileFlag);
-
-
-    void set_D(double mu, double nu);
 
     void renumber_boundary_ids();
 
@@ -246,6 +246,7 @@ namespace compressed_strip
     MuFunction mu;
 
     std::vector<unsigned int> corner_dofs;
+    std::vector<unsigned int> inside_dofs;
 
   };
 }
