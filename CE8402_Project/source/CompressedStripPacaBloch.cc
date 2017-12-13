@@ -24,7 +24,7 @@
 
 
 #define MU_VALUE 1.0
-#define NU_VALUE 0.3
+#define NU_VALUE 0.0
 
 #define DIM 2
 
@@ -236,69 +236,47 @@ namespace compressed_strip
                                     constraints,
                                     /*keep_constrained_dofs = */ true);
 
+
+    corner_dofs.resize(4, 0);
+    const unsigned int  number_dofs = dof_handler.n_dofs();
+
+    std::vector<Point<DIM>> support_points(dof_handler.n_dofs());
+    MappingQ1<DIM> mapping;
+    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
+
+    std::vector<bool> x2_components = {false, true};
+    ComponentMask x2_mask(x2_components);
+
+    std::vector<bool> is_x2_comp(number_dofs);
+
+    DoFTools::extract_dofs(dof_handler, x2_mask, is_x2_comp);
+
+
+
+    for(unsigned int i = 0; i < number_dofs; i++)
+    {
+     if( (fabs(support_points[i](0) - domain_dimensions[0]) < 1e-6) &&
+         (fabs(fabs(support_points[i](1)) - domain_dimensions[1]/2.0) < 1e-6 ))
+       {
+         if(!is_x2_comp[i])
+         {
+           if(fabs(support_points[i](1) + domain_dimensions[1]/2.0) < 1e-6)
+             corner_dofs[0] = i;
+           else if((fabs(support_points[i](1) - domain_dimensions[1]/2.0) < 1e-6))
+             corner_dofs[2] = i;
+         }
+         else
+         {
+           if(fabs(support_points[i](1) + domain_dimensions[1]/2.0) < 1e-6)
+             corner_dofs[1] = i;
+           else if((fabs(support_points[i](1) - domain_dimensions[1]/2.0) < 1e-6))
+             corner_dofs[3] = i;
+         }
+
+       }
+    }
     if(problem_2_flag)
     {
-      corner_dofs.resize(4, 0);
-      inside_dofs.resize(4, 0);
-
-      const unsigned int  number_dofs = dof_handler.n_dofs();
-
-      std::vector<Point<DIM>> support_points(dof_handler.n_dofs());
-      MappingQ1<DIM> mapping;
-      DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
-
-      std::vector<bool> x2_components = {false, true};
-      ComponentMask x2_mask(x2_components);
-
-      std::vector<bool> is_x2_comp(number_dofs);
-
-      DoFTools::extract_dofs(dof_handler, x2_mask, is_x2_comp);
-
-
-
-      for(unsigned int i = 0; i < number_dofs; i++)
-      {
-        if( (fabs(support_points[i](0) - domain_dimensions[0]) < 1e-6) &&
-            (fabs(fabs(support_points[i](1)) - domain_dimensions[1]/2.0) < 1e-6 ))
-          {
-            if(!is_x2_comp[i])
-            {
-              if(fabs(support_points[i](1) + domain_dimensions[1]/2.0) < 1e-6)
-                corner_dofs[0] = i;
-              else if((fabs(support_points[i](1) - domain_dimensions[1]/2.0) < 1e-6))
-                corner_dofs[2] = i;
-            }
-            else
-            {
-              if(fabs(support_points[i](1) + domain_dimensions[1]/2.0) < 1e-6)
-                corner_dofs[1] = i;
-              else if((fabs(support_points[i](1) - domain_dimensions[1]/2.0) < 1e-6))
-                corner_dofs[3] = i;
-            }
-
-          }
-
-        if( (fabs(support_points[i](0) + domain_dimensions[0]/grid_dimensions[0] - domain_dimensions[0]) < 1e-6) &&
-            (fabs(fabs(support_points[i](1)) - domain_dimensions[1]/2.0) < 1e-6 ))
-          {
-            if(!is_x2_comp[i])
-            {
-              if(fabs(support_points[i](1) + domain_dimensions[1]/2.0) < 1e-6)
-                inside_dofs[0] = i;
-              else if((fabs(support_points[i](1) - domain_dimensions[1]/2.0) < 1e-6))
-                inside_dofs[2] = i;
-            }
-            else
-            {
-              if(fabs(support_points[i](1) + domain_dimensions[1]/2.0) < 1e-6)
-                inside_dofs[1] = i;
-              else if((fabs(support_points[i](1) - domain_dimensions[1]/2.0) < 1e-6))
-                inside_dofs[3] = i;
-            }
-
-          }
-      }
-
       for (unsigned int i = 0; i < corner_dofs.size(); i++)
       {
         for (unsigned int j = 0; j < corner_dofs.size(); j++)
@@ -436,26 +414,28 @@ namespace compressed_strip
 
     system_matrix = 0.0;
 
-    QGauss<1> quad_2(2);
-    QGauss<1> quad_1(1);
+    QGauss<1> quad_x(qx);
+    QGauss<1> quad_y(qy);
 
-    QAnisotropic<DIM> quadrature_problem_2(quad_1, quad_2);
+    QAnisotropic<DIM> quadrature_formula(quad_x, quad_y);
 
 
-    FEValues<DIM> fe_values (fe, quadrature_problem_2,
+    FEValues<DIM> fe_values (fe, quadrature_formula,
                              update_values   | update_gradients |
                              update_quadrature_points | update_JxW_values);
 
     const unsigned int   dofs_per_cell = fe.dofs_per_cell;
  //   unsigned int   n_q_points    = quadrature_formula.size();
  //   if(problem_2_flag)
-    unsigned int n_q_points = quadrature_problem_2.size();
+    unsigned int n_q_points = quadrature_formula.size();
 
     FullMatrix<double>   cell_matrix (dofs_per_cell, dofs_per_cell);
 
     std::vector<std::vector<Tensor<1,DIM> > > old_solution_gradients(n_q_points, std::vector<Tensor<1,DIM>>(DIM));
 
     std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
+
+    ConstantFunction<DIM> nu(nu_val);
 
     std::vector<double>     nu_values (n_q_points);
     std::vector<double>     mu_values (n_q_points);
@@ -558,26 +538,28 @@ namespace compressed_strip
 
     system_rhs = 0.0;
 
-    QGauss<1> quad_2(2);
-    QGauss<1> quad_1(1);
+    QGauss<1> quad_x(qx);
+    QGauss<1> quad_y(qy);
 
-    QAnisotropic<DIM> quadrature_problem_2(quad_1, quad_2);
+    QAnisotropic<DIM> quadrature_formula(quad_x, quad_y);
 
 
-    FEValues<DIM> fe_values (fe, quadrature_problem_2,
+    FEValues<DIM> fe_values (fe, quadrature_formula,
                              update_values   | update_gradients |
                              update_quadrature_points | update_JxW_values);
 
     const unsigned int   dofs_per_cell = fe.dofs_per_cell;
     // unsigned int   n_q_points    = quadrature_formula.size();
 
-      unsigned int n_q_points = quadrature_problem_2.size();
+      unsigned int n_q_points = quadrature_formula.size();
 
     Vector<double>       cell_rhs (dofs_per_cell);
 
     std::vector<std::vector<Tensor<1,DIM> > > old_solution_gradients(n_q_points, std::vector<Tensor<1,DIM>>(DIM));
 
     std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
+
+    ConstantFunction<DIM> nu(nu_val);
 
     std::vector<double>     nu_values (n_q_points);
     std::vector<double>     mu_values (n_q_points);
@@ -734,11 +716,6 @@ namespace compressed_strip
       u22 = evaluation_point[x22];
       double h = domain_dimensions[1];
 
-//      std::cout << u11 << " " << u12 << " " << u21 << " " << u22 << std::endl;
-//      std::cout << ((u21 - u11)*(u21 - u11) + (u22 + h - u12)*(u22 + h - u12)) << std::endl;
-
-
-
       double a0 = 1.0/((u21 - u11)*(u21 - u11) + (u22 + h - u12)*(u22 + h - u12));
       double a1 = a0*a0;
       a0 *= load_val;
@@ -754,26 +731,6 @@ namespace compressed_strip
       double dF12_du12 = -a1*2*(u22 + h - u12)*(u11 - u21);
       double dF12_du21 = a1*2*(u21 - u11)*(u11 - u21) - a0;
       double dF12_du22 = a1*2*(u22 + h - u12)*(u11 - u21);
-
-//      system_matrix.add(x11, x11, -dF11_du11);
-//      system_matrix.add(x12, x11, -dF11_du12);
-//      system_matrix.add(x21, x11, -dF11_du21);
-//      system_matrix.add(x22, x11, -dF11_du22);
-//
-//      system_matrix.add(x11, x12, -dF12_du11);
-//      system_matrix.add(x12, x12, -dF12_du12);
-//      system_matrix.add(x21, x12, -dF12_du21);
-//      system_matrix.add(x22, x12, -dF12_du22);
-//
-//      system_matrix.add(x11, x21, dF11_du11);
-//      system_matrix.add(x12, x21, dF11_du12);
-//      system_matrix.add(x21, x21, dF11_du21);
-//      system_matrix.add(x22, x21, dF11_du22);
-//
-//      system_matrix.add(x11, x22, dF12_du11);
-//      system_matrix.add(x12, x22, dF12_du12);
-//      system_matrix.add(x21, x22, dF12_du21);
-//      system_matrix.add(x22, x22, dF12_du22);
 
       system_matrix.add(x11, x11, -dF11_du11);
       system_matrix.add(x11, x12, -dF11_du12);
@@ -1011,6 +968,167 @@ namespace compressed_strip
     return num_neg_eigs;
   }
 
+  void ElasticProblem::get_characteristic_displacements_and_load(double* lambda,double* u, double* v)
+  {
+
+    if(problem_2_flag)
+    {
+      *u = (0.5*(present_solution[corner_dofs[2]] + present_solution[corner_dofs[0]]) + domain_dimensions[0])/domain_dimensions[0];
+      *v = 0.5*(present_solution[corner_dofs[1]] + present_solution[corner_dofs[3]])/domain_dimensions[0];
+      double I = 1.0/12.0;
+      *lambda = get_load_val()*domain_dimensions[0]/I;
+    }
+    else
+    {
+      *u = present_solution[corner_dofs[2]]/domain_dimensions[0];
+      *v = 2.0*present_solution[corner_dofs[3]]/domain_dimensions[1];
+      *lambda = get_load_val()/domain_dimensions[1];
+    }
+  }
+
+
+  void ElasticProblem::get_stress_components(double *lambda, std::vector<double> *sigma, std::vector<double> *s)
+  {
+
+    if(problem_2_flag)
+      *lambda = get_load_val();
+    else
+      *lambda = get_load_val()/domain_dimensions[1];
+    (*sigma).resize(0);
+    (*s).resize(0);
+
+    std::vector<Point<DIM>> qPoints(2);
+    qPoints[0][0] = 0.5;
+    qPoints[0][1] = 0.0;
+    qPoints[1][0] = 0.5;
+    qPoints[1][1] = 1.0;
+
+    std::vector<double> weights(2);
+    weights[0] = 1.0;
+    weights[1] = 1.0;
+
+    Quadrature<DIM> quadrature_ends(qPoints, weights);
+
+
+    FEValues<DIM> fe_values (fe, quadrature_ends,
+                             update_values   | update_gradients |
+                             update_quadrature_points | update_JxW_values);
+
+    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
+    // unsigned int   n_q_points    = quadrature_formula.size();
+
+      unsigned int n_q_points = quadrature_ends.size();
+
+
+    std::vector<std::vector<Tensor<1,DIM> > > old_solution_gradients(n_q_points, std::vector<Tensor<1,DIM>>(DIM));
+
+    std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
+
+    ConstantFunction<DIM> nu(nu_val);
+
+    std::vector<double>     nu_values (n_q_points);
+    std::vector<double>     mu_values (n_q_points);
+
+    typename DoFHandler<DIM>::active_cell_iterator cell = dof_handler.begin_active(),
+                                                   endc = dof_handler.end();
+
+    Tensor<2, DIM> R;
+    Tensor<2, DIM> rot_sigma;
+
+    if(problem_2_flag)
+    {
+      // get rotation
+      double h = domain_dimensions[1];
+      double u11, u12, u21, u22;
+      unsigned int x11, x12, x21, x22;
+      x11 = corner_dofs[0];
+      x12 = corner_dofs[1];
+      x21 = corner_dofs[2];
+      x22 = corner_dofs[3];
+
+      u11 = present_solution[x11];
+      u12 = present_solution[x12];
+      u21 = present_solution[x21];
+      u22 = present_solution[x22];
+      double theta = atan2((u21 - u11),(u22 - u12 + h));
+
+      R[0][0] = cos(theta);
+      R[0][1] = -sin(theta);
+      R[1][1] = cos(theta);
+      R[1][0] = sin(theta);
+
+      bool found_end = false;
+      for(; cell != endc; cell++)
+      {
+        for(unsigned int j = 0; j < 4;j++)
+        {
+          Point<DIM> p = cell->vertex(j);
+
+          if(fabs(p[0] - domain_dimensions[0]) < 1e-8)
+          {
+            found_end = true;
+            break;
+          }
+        }
+        if (found_end == true)
+          break;
+      }
+    }
+    else
+    {
+      R[0][0] = 1.0;
+      R[0][1] = 0.0;
+      R[1][1] = 1.0;
+      R[1][0] = 0.0;
+    }
+
+    fe_values.reinit (cell);
+
+    fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
+
+    nu.value_list (fe_values.get_quadrature_points(), nu_values);
+    mu.value_list  (fe_values.get_quadrature_points(), mu_values);
+
+    for(unsigned int q_point = 0; q_point < n_q_points; q_point++)
+    {
+      D = get_the_D(mu_values[q_point], nu_values[q_point]);
+      Tensor<2,DIM> F = get_deformation_gradient(old_solution_gradients[q_point]);
+      Tensor<2, DIM> E = get_lagrangian_strain(F);
+
+      Tensor<2, DIM> S;
+
+      for(unsigned int i = 0; i < DIM; i++)
+        for(unsigned int j = 0; i < DIM; i++)
+          for(unsigned int k = 0; i < DIM; i++)
+            for(unsigned int l = 0; i < DIM; i++)
+              S[i][j] += D[i][j][k][l]*E[k][l];
+
+      Tensor<2,DIM> Sigma;
+      Sigma = (1.0/determinant(F))*F*S*transpose(F);
+
+      sigma->push_back(Sigma[0][0]);
+      sigma->push_back(Sigma[0][1]);
+      sigma->push_back(Sigma[1][1]);
+
+      s->push_back(S[0][0]);
+      s->push_back(S[1][0]);
+      s->push_back(S[1][1]);
+
+
+      rot_sigma = R*Sigma*transpose(R);
+
+
+      sigma->push_back(rot_sigma[0][0]);
+      sigma->push_back(rot_sigma[0][1]);
+      sigma->push_back(rot_sigma[1][1]);
+
+      if(!problem_2_flag)
+        break;
+
+
+    }
+
+  }
 
   void ElasticProblem::output_results (const unsigned int cycle) const
   {
@@ -1142,7 +1260,6 @@ namespace compressed_strip
 
   void ElasticProblem::output_load_info(std::vector<double> lambda_values,
                                              std::vector<double> energy_values,
-                                             std::vector<double> congugate_lambda_values,
                                              std::vector<double> displacement_magnitude,
                                              const unsigned int cycle) const
   {
@@ -1161,19 +1278,88 @@ namespace compressed_strip
     filename += ".txt";
     std::ofstream load_data_output;
     load_data_output.open(filename.c_str());
-    load_data_output << "# lambda";
-    load_data_output << std::setw(25) << "energy" ;
-    load_data_output << std::setw(25) << "congugate_lambda" << std::endl;
+    load_data_output << "# load";
+    load_data_output << std::setw(25) << "u" ;
+    load_data_output << std::setw(25) << "v" << std::endl;
     load_data_output << std::endl;
     for(unsigned int i = 0; i < lambda_values.size(); i ++)
     {
       load_data_output << std::setprecision(15) << std::setw(8) << lambda_values[i];
       load_data_output << std::setprecision(15) << std::setw(25) << energy_values[i];
-      load_data_output << std::setprecision(15) << std::setw(25) << congugate_lambda_values[i];
       load_data_output << std::setprecision(15) << std::setw(25) << displacement_magnitude[i] << std::endl;
     }
 
     load_data_output.close();
+  }
+
+  void ElasticProblem::output_stresses(std::vector<double> lambda_values,
+                           std::vector<std::vector<double>> *sigma,
+                           std::vector<std::vector<double>> *secondPiola,
+                           const unsigned int cycle)  const
+  {
+     std::string filename(output_directory);
+     filename += "/load_info";
+     // see if the directory exists...
+     struct stat st;
+     if (stat(filename.c_str(), &st) == -1)
+       mkdir(filename.c_str(), 0700);
+
+     std::string cauchy_stresses = filename;
+     cauchy_stresses += "/cauchy_stresses";
+     cauchy_stresses += std::to_string(cycle);
+     cauchy_stresses += ".txt";
+
+     std::string second_piola = filename;
+     second_piola += "/second_piola_stresses";
+     second_piola += std::to_string(cycle);
+     second_piola += ".txt";
+
+     std::string rotated_cauchy = filename;
+     rotated_cauchy += "/rotated_cauchy_stresses";
+     rotated_cauchy += std::to_string(cycle);
+     rotated_cauchy += ".txt";
+
+     std::ofstream cauchy_out;
+     std::ofstream second_piola_out;
+     std::ofstream rotated_cauchy_out;
+
+     cauchy_out.open(cauchy_stresses.c_str());
+     rotated_cauchy_out.open(rotated_cauchy.c_str());
+     second_piola_out.open(second_piola.c_str());
+
+     for(unsigned int i = 0; i < lambda_values.size(); i ++)
+     {
+       cauchy_out << std::setprecision(15) << std::setw(8) << lambda_values[i];
+       cauchy_out << "   ";
+
+       second_piola_out << std::setprecision(15) << std::setw(8) << lambda_values[i];
+       second_piola_out << "   ";
+
+       rotated_cauchy_out << std::setprecision(15) << std::setw(8) << lambda_values[i];
+       rotated_cauchy_out << "   ";
+
+       for(unsigned int j = 0; j < ((*sigma)[i].size())/6; j++)
+       {
+         cauchy_out << std::setprecision(8) << ((*sigma)[i])[0 + 6*j] << "   "
+                                                   << ((*sigma)[i])[1 + 6*j] << "   "
+                                                   << ((*sigma)[i])[2 + 6*j] << "   " ;
+
+         rotated_cauchy_out << std::setprecision(8) << ((*sigma)[i])[3 + 6*j] << "   "
+                                                   << ((*sigma)[i])[4 + 6*j] << "   "
+                                                   << ((*sigma)[i])[5 + 6*j] << "   " ;
+         second_piola_out << std::setprecision(8) << ((*secondPiola)[i])[0 + 3*j] << "   "
+                                                   << ((*secondPiola)[i])[1 + 3*j] << "   "
+                                                   << ((*secondPiola)[i])[2 + 3*j] << "   ";
+       }
+       cauchy_out << std::endl;
+       rotated_cauchy_out << std::endl;
+       second_piola_out << std::endl;
+
+     }
+
+     cauchy_out.close();
+     rotated_cauchy_out.close();
+     second_piola_out.close();
   }
 
   void ElasticProblem::read_input_file(char* filename)
@@ -1240,6 +1426,22 @@ namespace compressed_strip
       {
         fileReadErrorFlag = true;
         goto fileClose;
+      }
+
+      // read in the nu value
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg", &nu_val);
+      if(valuesWritten != 1)
+      {
+        fileReadErrorFlag = true;
+      }
+
+      // read in the number of guass points in the x and y direction
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%u  %u", &qx, &qy);
+      if(valuesWritten != 2)
+      {
+        fileReadErrorFlag = true;
       }
 
       // read in the absolute tolerance of newton iteration and max iterations

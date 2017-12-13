@@ -137,8 +137,12 @@ namespace compressed_strip
     void output_results(const unsigned int cycle) const;
     void output_load_info(std::vector<double> lambda_values,
                          std::vector<double> energy_values,
-                         std::vector<double> congugate_lambda_values,
                          std::vector<double> displacement_magnitude,
+                         const unsigned int cycle)  const;
+
+    void output_stresses(std::vector<double> lambda_values,
+                         std::vector<std::vector<double>> *sigma,
+                         std::vector<std::vector<double>> *secondPiola,
                          const unsigned int cycle)  const;
 
     void read_input_file(char* filename);
@@ -148,6 +152,9 @@ namespace compressed_strip
 
     void set_boundary_values();
     void print_dof_coords_and_vals(unsigned int indx);
+
+    void get_characteristic_displacements_and_load(double* lambda, double* u, double* v);
+    void get_stress_components(double *lambda, std::vector<double> *sigma, std::vector<double> *S);
 
     // get methods for important constants
 
@@ -235,18 +242,19 @@ namespace compressed_strip
     double final_load = 0.0;
     unsigned int load_steps = 0;
     unsigned int output_every = 0;
+    unsigned int qx = 2;
+    unsigned int qy = 2;
 
+    double nu_val = 0.0;
     double load_val = 0.0;
 
     bool problem_2_flag = false;
 
     char output_directory[MAXLINE];
 
-    NuFunction nu;
     MuFunction mu;
 
     std::vector<unsigned int> corner_dofs;
-    std::vector<unsigned int> inside_dofs;
 
   };
 }

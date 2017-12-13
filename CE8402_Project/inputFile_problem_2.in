@@ -10,11 +10,17 @@ problem_2
 # domain dimensions
 100 1
 
+# nu value
+0.0
+
+# guass points in x and y
+1 2
+
 # absolute tolerance of newton
 1e-6 1000
 
 # final load and load steps
-0.01 4000
+0.01 3000
 
 # output every
 50
