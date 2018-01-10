@@ -1,0 +1,42 @@
+# this is an example input file for the CompressedStrip code.
+# Blank lines and ones starting with '#' are ignored.
+
+# output file name prefix
+example_3_0
+
+# number unit cells:
+# unsigned int
+1
+
+# length of the deformable air (in units of block thickness)
+# unsigned int
+2
+
+# Dimensions of grids in x1 and x2 of each unit cell, and value if the mesh is nonuniform
+# (1 for non-uniform, 0 otherwise), respectfully:
+# unsigned int     unsigned int     unsigned int
+4 4 0
+
+# Absolute tolerance on the l2 norm of the residual for the newton iteration:
+# double
+1e-8 150
+
+# exponential growth parameter kappa:
+# double
+3.0
+
+# critical load:
+# double
+0.235013170118756
+
+# critical frequency:
+# double
+1.895290000000000
+
+# ds and load steps:
+# double     unsigned int
+0.002 400
+
+# output every n steps:
+# unsigned int
+50
