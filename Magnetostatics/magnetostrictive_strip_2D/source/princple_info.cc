@@ -26,7 +26,10 @@ int main ()
             << std::endl << std::endl;
 
 
-  ep.rhs_numerical_deriv(1e-8);
+  ep.update_B0(0.0, 0.0);
+  ep.set_present_lambda(0.0);
+  ep.rhs_numerical_deriv(1e-6);
+  ep.compute_and_compare_second_numer_deriv(1e-4);
   exit(-1);
 
   std::vector<double> lambda_values;

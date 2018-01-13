@@ -22,7 +22,7 @@
 #include <sys/stat.h>
 
 
-#define MU0 0.52 // 4*3.1415926535897*1e-7
+#define MU0 1.0 // 4*3.1415926535897*1e-7
 #define SUS 1.0
 #define MU_VALUE 1.0
 #define NU_VALUE 0.33
@@ -127,11 +127,12 @@ namespace compressed_strip
     Assert (p.dimension == 2, ExcNotImplemented())
 
     bool RhoValue;
-    if( (fabs(p(0)) < L/2.0) &&  p(1) < 1.0 && p(1) > 0)
+    if( p(1) < L && p(1) > 0)
       RhoValue = true;
     else
       RhoValue = false;
 
+//    RhoValue = false;
 
     return RhoValue;
   }
@@ -217,39 +218,37 @@ namespace compressed_strip
     // creates our strip.
     Point<DIM> corner1, corner2;
     corner1(0) = -domain_dimensions[0]/2.0;
-    corner1(1) =  -2*Rf_i*domain_dimensions[1];
+    corner1(1) =  -(2.0*Rf_i)*domain_dimensions[1];
     corner2(0) =  domain_dimensions[0]/2.0;
-    corner2(1) =  (1 + 2*Rf_i)*domain_dimensions[1];
+    corner2(1) =  (1.0 + 2.0*Rf_i)*domain_dimensions[1];
     GridGenerator::subdivided_hyper_rectangle (triangulation, grid_dimensions, corner1, corner2, true);
 
-
-
-    if (nonUniform_mesh_flag)
-    {
-      // Now we will refine this mesh
-      const int numSections = 2;
-      for (int i = 0 ; i < numSections; i ++)
-      {
-        double section_x2 = (0.5/numSections)*i + 0.5;
-        Triangulation<2>::active_cell_iterator cell = triangulation.begin_active();
-        Triangulation<2>::active_cell_iterator endc = triangulation.end();
-        for (; cell!=endc; ++cell)
-        {
-          for (unsigned int v=0;
-               v < GeometryInfo<2>::vertices_per_cell;
-               ++v)
-            {
-              const double x2_pos = (cell->vertex(v))(1);
-              if ( x2_pos > section_x2)
-                {
-                  cell->set_refine_flag ();
-                  break;
-                }
-            }
-        }
-        triangulation.execute_coarsening_and_refinement ();
-      }
-    }
+//    if (nonUniform_mesh_flag)
+//    {
+//      // Now we will refine this mesh
+//      const int numSections = 2;
+//      for (int i = 0 ; i < numSections; i ++)
+//      {
+//        double section_x2 = (0.5/numSections)*i + 0.5;
+//        Triangulation<2>::active_cell_iterator cell = triangulation.begin_active();
+//        Triangulation<2>::active_cell_iterator endc = triangulation.end();
+//        for (; cell!=endc; ++cell)
+//        {
+//          for (unsigned int v=0;
+//               v < GeometryInfo<2>::vertices_per_cell;
+//               ++v)
+//            {
+//              const double x2_pos = (cell->vertex(v))(1);
+//              if ( x2_pos > section_x2)
+//                {
+//                  cell->set_refine_flag ();
+//                  break;
+//                }
+//            }
+//        }
+//        triangulation.execute_coarsening_and_refinement ();
+//      }
+//    }
 
     // Make sure to renumber the boundaries
     renumber_boundary_ids();
@@ -517,7 +516,7 @@ namespace compressed_strip
     matched_dofs.resize(number_dofs, -1);
     for(unsigned int i = 0; i < number_dofs; i++)
     {
-     if (boundary_1_dof[i] || boundary_2_dof[i])
+     if (boundary_1_dof[i] || boundary_2_dof[i] || (support_points[i](1) > (domain_dimensions[1] + 1e-4)) || support_points[i](1) < 0)
        continue;
      if (is_x2_comp[i])
      {
@@ -603,13 +602,17 @@ namespace compressed_strip
                                    x1_x2_mask,
                                    boundary_dof);
 
+
     for(unsigned int i = 0; i < number_dofs; i++)
     {
+      if(boundary_dof[i])
+        continue;
+
       if( is_x1_x2_comp[i] &&
           (fabs(support_points[i](1) - 0.5) > (0.5 + 1e-4 + Rf)))
       {
         // uniformly compressed air
-        constraints.add_line (i);
+        constraints.add_line(i);
       }
       else if( is_x1_x2_comp[i] &&
               (fabs(support_points[i](1) - 0.5) > (0.5 + 1e-4)))
@@ -617,9 +620,9 @@ namespace compressed_strip
         // is deformable air
         double mindist = 1e6;
         unsigned int matched_index = (number_dofs + 1);
-        for(unsigned int j = 0; i < number_dofs; j++)
+        for(unsigned int j = 0; j < number_dofs; j++)
         {
-          if((boundary_dof[j] == false) || (is_x1_comp[i] != is_x1_comp[j]))
+          if((boundary_dof[j] == false) || (is_x1_comp[i] != is_x1_comp[j]) || i == j)
             continue;
           else
           {
@@ -866,82 +869,176 @@ namespace compressed_strip
 
   void ElasticProblem::assemble_system_matrix()
   {
-//    // Assembling the system matrix. I chose to make the rhs and system matrix assemblies separate,
-//    // because we only do one at a time anyways in the newton method.
-//
-//    system_matrix = 0.0;
-//
-//    QGauss<DIM>  quadrature_formula(2);
-//
-//    FEValues<DIM> fe_values (fe, quadrature_formula,
-//                             update_values   | update_gradients |
-//                             update_quadrature_points | update_JxW_values);
-//
-//    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
-//    const unsigned int   n_q_points    = quadrature_formula.size();
-//
-//    FullMatrix<double>   cell_matrix (dofs_per_cell, dofs_per_cell);
-//
-//    std::vector<std::vector<Tensor<1,DIM> > > old_solution_gradients(n_q_points, std::vector<Tensor<1,DIM>>(DIM));
-//
-//    std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
-//
-//    std::vector<double>     nu_values (n_q_points);
-//    std::vector<double>     mu_values (n_q_points);
-//
-//    typename DoFHandler<DIM>::active_cell_iterator cell = dof_handler.begin_active(),
-//                                                   endc = dof_handler.end();
-//    for (; cell!=endc; ++cell)
-//    {
-//      cell_matrix = 0.0;
-//
-//      fe_values.reinit (cell);
-//
-//      fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
-//
-//      nu.value_list (fe_values.get_quadrature_points(), nu_values);
-//      mu->value_list (fe_values.get_quadrature_points(), mu_values);
-//
-//
-//      for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
-//      {
-//
-//        Tensor<2,DIM> F = get_deformation_gradient(old_solution_gradients[q_point]);
-//        Tensor<2, DIM> F_inv = invert(F);
-//        double II_F = determinant(F);
-//
-//        Tensor<4,DIM> d2W_dFdF = nh.get_incremental_moduli_tensor(nu_values[q_point],
-//                                           mu_values[q_point], F_inv, II_F);
-//
-//        for (unsigned int n = 0; n < dofs_per_cell; ++n)
-//        {
-//          const unsigned int component_n = fe.system_to_component_index(n).first;
-//
-//          for (unsigned int m = 0; m < dofs_per_cell; ++m)
-//          {
-//            const unsigned int component_m = fe.system_to_component_index(m).first;
-//
-//            for (unsigned int j=0; j<DIM; ++j)
-//              for (unsigned int l=0; l<DIM; ++l)
-//              {
-//                cell_matrix(n,m) += d2W_dFdF[component_n][j][component_m][l]*
-//                        fe_values.shape_grad(n, q_point)[j]*fe_values.shape_grad(m, q_point)[l]*fe_values.JxW(q_point);
-//
-//              }
-//          }
-//        }
-//      }
-//
-//      cell->get_dof_indices (local_dof_indices);
-//
-//      for (unsigned int n=0; n<dofs_per_cell; ++n)
-//        for (unsigned int m=0; m<dofs_per_cell; ++m)
-//        {
-//          system_matrix.add (local_dof_indices[n],
-//                             local_dof_indices[m],
-//                             cell_matrix(n,m));
-//        }
-//    }
+    // Assembling the system matrix. I chose to make the rhs and system matrix assemblies separate,
+    // because we only do one at a time anyways in the newton method.
+
+    system_matrix = 0.0;
+
+
+    QGauss<DIM>  quadrature_formula(2);
+
+    FEValues<DIM> fe_values (fe, quadrature_formula,
+                             update_values   | update_gradients |
+                             update_quadrature_points | update_JxW_values);
+
+    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
+    const unsigned int   n_q_points    = quadrature_formula.size();
+
+    FullMatrix<double>   cell_matrix (dofs_per_cell, dofs_per_cell);
+
+    std::vector<Tensor<2,DIM>> old_displacement_gradients(n_q_points);
+    std::vector<Tensor<1, DIM>> old_potential_gradients(n_q_points);
+
+    std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
+
+    std::vector<double>     nu_values (n_q_points);
+    std::vector<double>     mu_values (n_q_points);
+    std::vector<double>     ms_values (n_q_points);
+
+    std::vector<bool>     rho_values (n_q_points);
+
+
+    const FEValuesExtractors::Vector displacements (0);
+    const FEValuesExtractors::Scalar potential (DIM);
+
+    typename DoFHandler<DIM>::active_cell_iterator cell = dof_handler.begin_active(),
+                                                   endc = dof_handler.end();
+    for (; cell!=endc; ++cell)
+    {
+      cell_matrix = 0.0;
+
+      fe_values.reinit (cell);
+
+      fe_values[potential].get_function_gradients(evaluation_point, old_potential_gradients);
+      fe_values[displacements].get_function_gradients(evaluation_point, old_displacement_gradients);
+
+
+      rho->bool_value_list(fe_values.get_quadrature_points(), rho_values);
+      nu.value_list (fe_values.get_quadrature_points(), nu_values);
+      mu->value_list     (fe_values.get_quadrature_points(), mu_values);
+      ms->value_list     (fe_values.get_quadrature_points(), ms_values);
+
+
+      for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+      {
+        double JxW = fe_values.JxW(q_point);
+
+        Tensor<1, DIM> B = get_B(old_potential_gradients[q_point]);
+        Tensor<2,DIM> F = get_deformation_gradient(old_displacement_gradients[q_point]);
+        Tensor<2, DIM> F_inv = invert(F);
+        double II_F = determinant(F);
+
+        double over_Jmu0 = 1.0/(II_F*MU0);
+
+        double norm_sqr_FB = (F*B)*(F*B);
+        Tensor<1, DIM> FB = F*B;
+        Tensor<2, DIM> C = transpose(F)*F;
+        Tensor<1, DIM> CB = C*B;
+
+
+        Tensor<4, DIM> d2psi_dFdF;
+        Tensor<3, DIM> d2psi_dFdB;
+        for(unsigned int i = 0; i < DIM; i ++)
+          for(unsigned int j = 0; j < DIM; j ++)
+            for(unsigned int k = 0; k < DIM; k ++)
+            {
+              d2psi_dFdB[i][j][k] = over_Jmu0*(F[i][k]*B[j] + (j == k ? 1.0 : 0.0)*FB[i] - CB[k]*F_inv[j][i]);
+              for(unsigned int l = 0; l < DIM; l ++)
+              {
+                d2psi_dFdF[i][j][k][l] = over_Jmu0*( 0.5*norm_sqr_FB*(F_inv[l][k]*F_inv[j][i] + F_inv[j][k]*F_inv[l][i]) -
+                                      FB[k]*B[l]*F_inv[j][i] - FB[i]*F_inv[l][k]*B[j] + (i ==k ? 1.0 : 0.0)*B[l]*B[j]);
+              }
+            }
+
+
+        for (unsigned int n = 0; n < dofs_per_cell; ++n)
+        {
+          Tensor<1,DIM> delta_Bn;
+          for(unsigned int l = 0; l < DIM; l++)
+            delta_Bn[l] = pow(-1, l)*fe_values[potential].gradient(n, q_point)[abs(l - 1)];
+
+          for (unsigned int m = 0; m < dofs_per_cell; ++m)
+          {
+            Tensor<1,DIM> delta_Bm;
+            for(unsigned int l = 0; l < DIM; l++)
+              delta_Bm[l] = pow(-1, l)*fe_values[potential].gradient(m, q_point)[abs(l - 1)];
+
+            for(unsigned int i = 0; i < DIM; i ++)
+              for(unsigned int j = 0; j < DIM; j ++)
+              {
+                cell_matrix(n,m) += over_Jmu0*C[i][j]*delta_Bn[i]*delta_Bm[j]*JxW;
+                for(unsigned int k = 0; k < DIM; k ++)
+                {
+                  cell_matrix(n,m) += d2psi_dFdB[i][j][k]*(fe_values[displacements].gradient(n, q_point)[i][j]*delta_Bm[k] +
+                                                           fe_values[displacements].gradient(m, q_point)[i][j]*delta_Bn[k])*JxW;
+                  for(unsigned int l = 0; l < DIM; l ++)
+                  {
+                    cell_matrix(n,m) += d2psi_dFdF[i][j][k][l]*fe_values[displacements].gradient(n, q_point)[i][j]*fe_values[displacements].gradient(m, q_point)[k][l]*JxW;
+                  }
+
+                }
+              }
+
+          }
+        }
+
+        if(rho_values[q_point])
+        {
+          Tensor<2, DIM> d2W_dBdB = nh.get_d2W_dBdB(nu_values[q_point], mu_values[q_point],
+                                                                    SUS, ms_values[q_point],
+                                                                    F, F_inv, II_F, B);
+          Tensor<3, DIM> d2W_dFdB = nh.get_d2W_dFdB(nu_values[q_point], mu_values[q_point],
+                                                    SUS, ms_values[q_point],
+                                                    F, F_inv, II_F, B);
+
+          Tensor<4,DIM> d2W_dFdF = nh.get_incremental_moduli_tensor(nu_values[q_point], mu_values[q_point],
+                                                                    SUS, ms_values[q_point],
+                                                                    F, F_inv, II_F, B);
+
+          for (unsigned int n = 0; n < dofs_per_cell; ++n)
+          {
+            Tensor<1,DIM> delta_Bn;
+            for(unsigned int l = 0; l < DIM; l++)
+              delta_Bn[l] = pow(-1, l)*fe_values[potential].gradient(n, q_point)[abs(l - 1)];
+
+            for (unsigned int m = 0; m < dofs_per_cell; ++m)
+            {
+              Tensor<1,DIM> delta_Bm;
+              for(unsigned int l = 0; l < DIM; l++)
+                delta_Bm[l] = pow(-1, l)*fe_values[potential].gradient(m, q_point)[abs(l - 1)];
+
+              for(unsigned int i = 0; i < DIM; i ++)
+                for(unsigned int j = 0; j < DIM; j ++)
+                {
+                  cell_matrix(n,m) += d2W_dBdB[i][j]*delta_Bn[i]*delta_Bm[j]*JxW;
+                  for(unsigned int k = 0; k < DIM; k ++)
+                  {
+                    cell_matrix(n,m) += (d2W_dFdB[i][j][k]*fe_values[displacements].gradient(n, q_point)[i][j]*delta_Bm[k] +
+                                         d2W_dFdB[i][j][k]*fe_values[displacements].gradient(m, q_point)[i][j]*delta_Bn[k])*JxW;
+                    for(unsigned int l = 0; l < DIM; l ++)
+                    {
+                      cell_matrix(n,m) += d2W_dFdF[i][j][k][l]*fe_values[displacements].gradient(n, q_point)[i][j]*fe_values[displacements].gradient(m, q_point)[k][l]*JxW;
+                    }
+
+                  }
+                }
+
+            }
+          }
+        }
+      }
+
+      cell->get_dof_indices (local_dof_indices);
+
+      for (unsigned int n=0; n<dofs_per_cell; ++n)
+        for (unsigned int m=0; m<dofs_per_cell; ++m)
+        {
+          system_matrix.add (local_dof_indices[n],
+                             local_dof_indices[m],
+                             cell_matrix(n,m));
+        }
+    }
+
   }
 
   void ElasticProblem::assemble_system_rhs()
@@ -1009,7 +1106,8 @@ namespace compressed_strip
 
         Tensor<2,DIM> dW_dF = nh.get_piola_kirchoff_tensor(nu_values[q_point], mu_values[q_point], SUS, ms_values[q_point],
                                                         F, F_inv, II_F, B);
-        Tensor<1,DIM> dW_dB;
+        Tensor<1,DIM> dW_dB = nh.get_dW_dB(nu_values[q_point], mu_values[q_point], SUS, ms_values[q_point],
+                                                        F, F_inv, II_F, B);
         double norm_sqr_FB = (F*B)*(F*B);
 
         for (unsigned int n = 0; n < dofs_per_cell; ++n)
@@ -1024,9 +1122,9 @@ namespace compressed_strip
 
           }
 
-          cell_rhs(n) -= (-0.5*over_Jmu0*norm_sqr_FB*F_inv_grad_u
-                           + over_Jmu0*(F*B)*(F*delta_B)
-                           + over_Jmu0*(F*B)*(fe_values[displacements].gradient(n, q_point)*B))*fe_values.JxW(q_point);
+          cell_rhs(n) -= over_Jmu0*(-0.5*norm_sqr_FB*F_inv_grad_u
+                           + (F*B)*(F*delta_B)
+                           + (F*B)*(fe_values[displacements].gradient(n, q_point)*B))*fe_values.JxW(q_point);
 
           if(rho_values[q_point])
           {
@@ -1047,7 +1145,6 @@ namespace compressed_strip
         system_rhs(local_dof_indices[n]) += cell_rhs(n);
 
     }
-
   //  constraints.condense (system_rhs);
 
   }
@@ -2218,7 +2315,7 @@ namespace compressed_strip
     domain_dimensions[0] = number_unit_cells*2.0*(4.0*atan(1.0))/critical_frequency;
     domain_dimensions[1] = 1.0;
 
-    rho = new RhoFunction(domain_dimensions[0]);
+    rho = new RhoFunction(domain_dimensions[1]);
 
     Rf = Rf_i*1.0;
 
@@ -2464,7 +2561,7 @@ namespace compressed_strip
 
   void ElasticProblem::rhs_numerical_deriv(double delta)
   {
-    add_small_pertubations(0.1, true);
+    add_small_pertubations(0.174, true);
     assemble_system_energy_and_congugate_lambda();
     assemble_system_rhs();
 
@@ -2474,6 +2571,7 @@ namespace compressed_strip
 
     double max_diff = 0.0;
 
+    std::cout << "Total Energy : " << e0 << std::endl;
     std::cout << "rhs difference : " << std::endl;
     for(unsigned int i = 0; i < dof_handler.n_dofs(); i++)
     {
@@ -2481,20 +2579,107 @@ namespace compressed_strip
       assemble_system_energy_and_congugate_lambda();
       numer_rhs[i] = (system_energy - e0)/(delta);
       evaluation_point[i] -= delta;
+    }
 
-      numer_rhs_diff[i] = (numer_rhs[i] + system_rhs[i])/system_rhs[i];
+//    constraints.condense(system_rhs);
+//    constraints.condense(numer_rhs);
+    for(unsigned int i = 0 ; i < dof_handler.n_dofs(); i++)
+    {
+//      if(fabs(system_rhs[i]) >= 1e-6 )
+//        numer_rhs_diff[i] = (numer_rhs[i] + system_rhs[i])/system_rhs[i];
+//      else
+        numer_rhs_diff[i] = (numer_rhs[i] + system_rhs[i]);
+
 
       std::cout << "   ";
       std::cout << std::setw(10) << numer_rhs[i] << "   ";
       std::cout << std::setw(10) << -system_rhs[i] << "   ";
       std::cout << std::setw(10) << numer_rhs_diff[i] << std::endl;
 
-      if(fabs(numer_rhs_diff[i]) > max_diff)
-        max_diff = fabs(numer_rhs_diff[i]);
     }
-    std::cout << std::endl;
 
-    std::cout <<"\n\n\nMaximum difference : " << max_diff << std::endl;
+    std::cout << std::endl;
+//    constraints.condense(numer_rhs_diff);
+
+    std::cout <<"\n\n\nL2 Norm of the difference : " << numer_rhs_diff.l2_norm() << std::endl;
+
+  }
+
+  void ElasticProblem::compute_and_compare_second_numer_deriv(double epsilon)
+  {
+    unsigned int numberDofs = dof_handler.n_dofs();
+    present_solution = 0.0;
+
+    add_small_pertubations(0.174, true);
+
+    evaluation_point = present_solution;
+    assemble_system_rhs();
+    assemble_system_matrix();
+    system_rhs *= -1.0;
+    Vector<double> residual = system_rhs;
+    std::vector<std::vector<double>> numericalStiffness(numberDofs);
+    for(unsigned int i = 0; i < numberDofs; i++)
+      numericalStiffness[i].resize(numberDofs);
+
+    for(unsigned int j = 0; j < numberDofs; j++)
+    {
+      evaluation_point[j] += epsilon;
+      assemble_system_rhs();
+      evaluation_point[j] -= epsilon;
+
+      system_rhs *= -1.0;
+      for(unsigned int i = 0; i < numberDofs; i++)
+      {
+        numericalStiffness[i][j] = (system_rhs[i] - residual[i])/epsilon;
+      }
+    }
+
+    std::ofstream out("secondDeriv.dat");
+    out << "" << std::endl;
+    out << "Stiffness Matrix" << std::endl;
+
+
+    for(unsigned int i = 0; i < numberDofs; i++)
+    {
+      for(unsigned int j = 0; j < numberDofs; j++)
+      {
+        out << system_matrix.el(i,j) << " ";
+      }
+      out << std::endl;
+    }
+
+    out << "\n\n\nNumerical" << std::endl;
+
+
+    for(unsigned int i = 0; i < numberDofs; i++)
+    {
+      for(unsigned int j = 0; j < numberDofs; j++)
+      {
+        out << numericalStiffness[i][j]  << " ";
+      }
+      out << std::endl;
+    }
+
+    out << "\n\n\nDifference" << std::endl;
+
+    double diffNorm = 0;
+    for(unsigned int i = 0; i < numberDofs; i++)
+    {
+      for(unsigned int j = 0; j < numberDofs; j++)
+      {
+        double diff;
+        diff = (system_matrix.el(i,j) - numericalStiffness[i][j]);
+        diffNorm += diff*diff;
+        out << diff << " ";
+      }
+      out << std::endl;
+    }
+    diffNorm = sqrt(diffNorm);
+
+    out << std::endl;
+    out << "Norm of the difference: " << diffNorm << std::endl;
+
+    out.close();
 
   }
 

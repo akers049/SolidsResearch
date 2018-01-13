@@ -79,7 +79,7 @@ using namespace dealii;
     Tensor<1, DIM> tmp;
     Tensor<1, DIM> FB = F*B;
 
-    tmp = 2*msf*suseptibility*(transpose(F)*FB);
+    tmp = 2.0*msf*suseptibility*(transpose(F)*FB);
 
     return tmp;
 
@@ -91,7 +91,7 @@ using namespace dealii;
                                   double II_F, Tensor<1, DIM> B)
   {
     Tensor<2, DIM> tmp;
-    tmp = 2*msf*suseptibility*(transpose(F)*F);
+    tmp = 2.0*msf*suseptibility*(transpose(F)*F);
 
     return tmp;
 
@@ -132,13 +132,13 @@ using namespace dealii;
             tmp[i][j][k][l] = ((i==k) && (j==l) ? mu : 0.0) +
                 (mu - (2.0*mu*nu/(1.0-nu))*(II_F*II_F - II_F))*F_inv[j][k]*F_inv[l][i] +
                 (4.0*nu*mu/(1.0-nu))*(II_F*II_F - 0.5*II_F)*F_inv[l][k]*F_inv[j][i] +
-                (k == j ? 1.0 : 0.0)*2.0*msf*suseptibility*B[i]*B[l];
+                (k == i ? 1.0 : 0.0)*2.0*msf*suseptibility*B[j]*B[l];
           }
 
     return tmp;
   }
 
-  Tensor<3, DIM> Compressible_NH_Langevin::get_d2W_dBdF(const double nu, const double mu,
+  Tensor<3, DIM> Compressible_NH_Langevin::get_d2W_dFdB(const double nu, const double mu,
                                           const double suseptibility, const double msf,
                                           Tensor<2,DIM> F, Tensor<2,DIM> F_inv,
                                           double II_F, Tensor<1, DIM> B)

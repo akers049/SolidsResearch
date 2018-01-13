@@ -54,7 +54,7 @@ using namespace dealii;
                                                         Tensor<2,DIM> F, Tensor<2,DIM> F_inv,
                                                         double II_F, Tensor<1, DIM> B);
 
-    virtual Tensor<3, DIM> get_d2W_dBdF(const double nu, const double mu,
+    virtual Tensor<3, DIM> get_d2W_dFdB(const double nu, const double mu,
                                             const double suseptibility, const double msf,
                                             Tensor<2,DIM> F, Tensor<2,DIM> F_inv,
                                             double II_F, Tensor<1, DIM> B);

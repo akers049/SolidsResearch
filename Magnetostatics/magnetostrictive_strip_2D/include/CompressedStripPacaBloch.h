@@ -243,6 +243,8 @@ namespace compressed_strip
     unsigned int get_number_unit_cells(){return number_unit_cells;};
 
     void rhs_numerical_deriv(double delta = 1e-6);
+    void compute_and_compare_second_numer_deriv(double epsilon);
+
 
     Vector<double>       present_solution;
     Vector<double>       evaluation_point;
@@ -299,6 +301,7 @@ namespace compressed_strip
 
     FESystem<DIM>        fe;
 
+    std::vector<unsigned int> zero_dofs;
     ConstraintMatrix     constraints;
     ConstraintMatrix     constraints_bloch;
     ConstraintMatrix     bloch_hanging_node_constraints;

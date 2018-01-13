@@ -15,7 +15,7 @@ example_3_0
 # Dimensions of grids in x1 and x2 of each unit cell, and value if the mesh is nonuniform
 # (1 for non-uniform, 0 otherwise), respectfully:
 # unsigned int     unsigned int     unsigned int
-4 4 0
+2 2 0
 
 # Absolute tolerance on the l2 norm of the residual for the newton iteration:
 # double
@@ -23,7 +23,7 @@ example_3_0
 
 # exponential growth parameter kappa:
 # double
-3.0
+1.0 0.5
 
 # critical load:
 # double
