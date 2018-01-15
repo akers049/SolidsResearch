@@ -30,9 +30,9 @@ using namespace dealii;
     public:
     virtual ~Compressible_NH_Langevin(){};
 
-    virtual double get_energy(const double nu, const double mu,
-                              const double suseptibility, const double msf,
-                              Tensor<2, DIM> F, double II_F, Tensor<1, DIM> B);
+    virtual double get_energy(const bool rho, const double nu, const double mu,
+        const double suseptibility, const double msf,
+        Tensor<2,DIM> F, Tensor<1, DIM> B);
 
     virtual Tensor<1,DIM> get_dW_dB(const double nu, const double mu,
                                     const double suseptibility, const double msf,
@@ -58,6 +58,14 @@ using namespace dealii;
                                             const double suseptibility, const double msf,
                                             Tensor<2,DIM> F, Tensor<2,DIM> F_inv,
                                             double II_F, Tensor<1, DIM> B);
+
+    void get_first_derivs(const bool rho, const double nu, const double mu,
+        const double suseptibility, const double msf,
+        Tensor<2,DIM> F, Tensor<1, DIM> B,  Tensor<1, DIM> *dW_dB, Tensor<2, DIM> *dW_dF);
+
+    void get_second_derivs(const bool rho, const double nu, const double mu,
+        const double suseptibility, const double msf,
+        Tensor<2,DIM> F, Tensor<1, DIM> B, Tensor<2, DIM> *d2W_dBdB, Tensor<3, DIM> *d2W_dFdB, Tensor<4, DIM> *d2W_dFdF);
 
   };
 

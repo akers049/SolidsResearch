@@ -23,7 +23,7 @@
 
 
 #define MU0 1.0 // 4*3.1415926535897*1e-7
-#define SUS 1.0
+#define MS 1.0
 #define MU_VALUE 1.0
 #define NU_VALUE 0.33
 
@@ -91,15 +91,15 @@ namespace compressed_strip
 
   }
 
-  void MsFunction::value_list(const std::vector< Point< DIM > > &  points,
+  void ChiFunction::value_list(const std::vector< Point< DIM > > &  points,
                            std::vector< double > &   values,
                            const unsigned int  component ) const
   {
     for(unsigned int i = 0; i < points.size(); i++)
-      values[i] = MsFunction::value(points[i], component);
+      values[i] = ChiFunction::value(points[i], component);
   }
 
-  double MsFunction::value (const Point<DIM>  &p,
+  double ChiFunction::value (const Point<DIM>  &p,
                                  const unsigned int  component) const
   {
     // this is a scalar function, so make sure component is zero...
@@ -131,8 +131,6 @@ namespace compressed_strip
       RhoValue = true;
     else
       RhoValue = false;
-
-//    RhoValue = false;
 
     return RhoValue;
   }
@@ -893,7 +891,7 @@ namespace compressed_strip
 
     std::vector<double>     nu_values (n_q_points);
     std::vector<double>     mu_values (n_q_points);
-    std::vector<double>     ms_values (n_q_points);
+    std::vector<double>     chi_values (n_q_points);
 
     std::vector<bool>     rho_values (n_q_points);
 
@@ -916,41 +914,22 @@ namespace compressed_strip
       rho->bool_value_list(fe_values.get_quadrature_points(), rho_values);
       nu.value_list (fe_values.get_quadrature_points(), nu_values);
       mu->value_list     (fe_values.get_quadrature_points(), mu_values);
-      ms->value_list     (fe_values.get_quadrature_points(), ms_values);
+      chi->value_list     (fe_values.get_quadrature_points(), chi_values);
 
 
       for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
       {
-        double JxW = fe_values.JxW(q_point);
 
         Tensor<1, DIM> B = get_B(old_potential_gradients[q_point]);
         Tensor<2,DIM> F = get_deformation_gradient(old_displacement_gradients[q_point]);
-        Tensor<2, DIM> F_inv = invert(F);
-        double II_F = determinant(F);
 
-        double over_Jmu0 = 1.0/(II_F*MU0);
+        Tensor<2,DIM> d2W_dBdB;
+        Tensor<3,DIM> d2W_dFdB;
+        Tensor<4,DIM> d2W_dFdF;
 
-        double norm_sqr_FB = (F*B)*(F*B);
-        Tensor<1, DIM> FB = F*B;
-        Tensor<2, DIM> C = transpose(F)*F;
-        Tensor<1, DIM> CB = C*B;
+        double JxW = fe_values.JxW(q_point);
 
-
-        Tensor<4, DIM> d2psi_dFdF;
-        Tensor<3, DIM> d2psi_dFdB;
-        for(unsigned int i = 0; i < DIM; i ++)
-          for(unsigned int j = 0; j < DIM; j ++)
-            for(unsigned int k = 0; k < DIM; k ++)
-            {
-              d2psi_dFdB[i][j][k] = over_Jmu0*(F[i][k]*B[j] + (j == k ? 1.0 : 0.0)*FB[i] - CB[k]*F_inv[j][i]);
-              for(unsigned int l = 0; l < DIM; l ++)
-              {
-                d2psi_dFdF[i][j][k][l] = over_Jmu0*( 0.5*norm_sqr_FB*(F_inv[l][k]*F_inv[j][i] + F_inv[j][k]*F_inv[l][i]) -
-                                      FB[k]*B[l]*F_inv[j][i] - FB[i]*F_inv[l][k]*B[j] + (i ==k ? 1.0 : 0.0)*B[l]*B[j]);
-              }
-            }
-
-
+        nh.get_second_derivs(rho_values[q_point], nu_values[q_point], mu_values[q_point], chi_values[q_point], MS,  F, B, &d2W_dBdB, &d2W_dFdB, &d2W_dFdF);
         for (unsigned int n = 0; n < dofs_per_cell; ++n)
         {
           Tensor<1,DIM> delta_Bn;
@@ -966,64 +945,19 @@ namespace compressed_strip
             for(unsigned int i = 0; i < DIM; i ++)
               for(unsigned int j = 0; j < DIM; j ++)
               {
-                cell_matrix(n,m) += over_Jmu0*C[i][j]*delta_Bn[i]*delta_Bm[j]*JxW;
+                cell_matrix(n,m) += d2W_dBdB[i][j]*delta_Bn[i]*delta_Bm[j]*JxW;
                 for(unsigned int k = 0; k < DIM; k ++)
                 {
-                  cell_matrix(n,m) += d2psi_dFdB[i][j][k]*(fe_values[displacements].gradient(n, q_point)[i][j]*delta_Bm[k] +
+                  cell_matrix(n,m) += d2W_dFdB[i][j][k]*(fe_values[displacements].gradient(n, q_point)[i][j]*delta_Bm[k] +
                                                            fe_values[displacements].gradient(m, q_point)[i][j]*delta_Bn[k])*JxW;
                   for(unsigned int l = 0; l < DIM; l ++)
                   {
-                    cell_matrix(n,m) += d2psi_dFdF[i][j][k][l]*fe_values[displacements].gradient(n, q_point)[i][j]*fe_values[displacements].gradient(m, q_point)[k][l]*JxW;
+                    cell_matrix(n,m) += d2W_dFdF[i][j][k][l]*fe_values[displacements].gradient(n, q_point)[i][j]*fe_values[displacements].gradient(m, q_point)[k][l]*JxW;
                   }
 
                 }
               }
 
-          }
-        }
-
-        if(rho_values[q_point])
-        {
-          Tensor<2, DIM> d2W_dBdB = nh.get_d2W_dBdB(nu_values[q_point], mu_values[q_point],
-                                                                    SUS, ms_values[q_point],
-                                                                    F, F_inv, II_F, B);
-          Tensor<3, DIM> d2W_dFdB = nh.get_d2W_dFdB(nu_values[q_point], mu_values[q_point],
-                                                    SUS, ms_values[q_point],
-                                                    F, F_inv, II_F, B);
-
-          Tensor<4,DIM> d2W_dFdF = nh.get_incremental_moduli_tensor(nu_values[q_point], mu_values[q_point],
-                                                                    SUS, ms_values[q_point],
-                                                                    F, F_inv, II_F, B);
-
-          for (unsigned int n = 0; n < dofs_per_cell; ++n)
-          {
-            Tensor<1,DIM> delta_Bn;
-            for(unsigned int l = 0; l < DIM; l++)
-              delta_Bn[l] = pow(-1, l)*fe_values[potential].gradient(n, q_point)[abs(l - 1)];
-
-            for (unsigned int m = 0; m < dofs_per_cell; ++m)
-            {
-              Tensor<1,DIM> delta_Bm;
-              for(unsigned int l = 0; l < DIM; l++)
-                delta_Bm[l] = pow(-1, l)*fe_values[potential].gradient(m, q_point)[abs(l - 1)];
-
-              for(unsigned int i = 0; i < DIM; i ++)
-                for(unsigned int j = 0; j < DIM; j ++)
-                {
-                  cell_matrix(n,m) += d2W_dBdB[i][j]*delta_Bn[i]*delta_Bm[j]*JxW;
-                  for(unsigned int k = 0; k < DIM; k ++)
-                  {
-                    cell_matrix(n,m) += (d2W_dFdB[i][j][k]*fe_values[displacements].gradient(n, q_point)[i][j]*delta_Bm[k] +
-                                         d2W_dFdB[i][j][k]*fe_values[displacements].gradient(m, q_point)[i][j]*delta_Bn[k])*JxW;
-                    for(unsigned int l = 0; l < DIM; l ++)
-                    {
-                      cell_matrix(n,m) += d2W_dFdF[i][j][k][l]*fe_values[displacements].gradient(n, q_point)[i][j]*fe_values[displacements].gradient(m, q_point)[k][l]*JxW;
-                    }
-
-                  }
-                }
-
-            }
           }
         }
       }
@@ -1066,7 +1000,7 @@ namespace compressed_strip
 
     std::vector<double>     nu_values (n_q_points);
     std::vector<double>     mu_values (n_q_points);
-    std::vector<double>     ms_values (n_q_points);
+    std::vector<double>     chi_values (n_q_points);
 
     std::vector<bool>     rho_values (n_q_points);
 
@@ -1090,7 +1024,7 @@ namespace compressed_strip
       rho->bool_value_list(fe_values.get_quadrature_points(), rho_values);
       nu.value_list (fe_values.get_quadrature_points(), nu_values);
       mu->value_list     (fe_values.get_quadrature_points(), mu_values);
-      ms->value_list     (fe_values.get_quadrature_points(), ms_values);
+      chi->value_list     (fe_values.get_quadrature_points(), chi_values);
 
       right_hand_side (fe_values.get_quadrature_points(), rhs_values);
 
@@ -1100,41 +1034,27 @@ namespace compressed_strip
 
         Tensor<1, DIM> B = get_B(old_potential_gradients[q_point]);
         Tensor<2,DIM> F = get_deformation_gradient(old_displacement_gradients[q_point]);
-        Tensor<2, DIM> F_inv = invert(F);
-        double II_F = determinant(F);
-        double over_Jmu0 = 1.0/(II_F*MU0);
 
-        Tensor<2,DIM> dW_dF = nh.get_piola_kirchoff_tensor(nu_values[q_point], mu_values[q_point], SUS, ms_values[q_point],
-                                                        F, F_inv, II_F, B);
-        Tensor<1,DIM> dW_dB = nh.get_dW_dB(nu_values[q_point], mu_values[q_point], SUS, ms_values[q_point],
-                                                        F, F_inv, II_F, B);
-        double norm_sqr_FB = (F*B)*(F*B);
+        Tensor<2,DIM> dW_dF;
+        Tensor<1,DIM> dW_dB;
+
+        double JxW = fe_values.JxW(q_point);
+
+        nh.get_first_derivs(rho_values[q_point], nu_values[q_point], mu_values[q_point], chi_values[q_point], MS,  F, B, &dW_dB, &dW_dF);
 
         for (unsigned int n = 0; n < dofs_per_cell; ++n)
         {
           Tensor<1,DIM> delta_B;
-          double F_inv_grad_u = 0.0;
+
           for(unsigned int l = 0; l < DIM; l++)
-          {
             delta_B[l] = pow(-1, l)*fe_values[potential].gradient(n, q_point)[abs(l - 1)];
-            for(unsigned int j = 0; j<DIM; ++j)
-              F_inv_grad_u += F_inv[l][j]*fe_values[displacements].gradient(n, q_point)[j][l];
 
-          }
-
-          cell_rhs(n) -= over_Jmu0*(-0.5*norm_sqr_FB*F_inv_grad_u
-                           + (F*B)*(F*delta_B)
-                           + (F*B)*(fe_values[displacements].gradient(n, q_point)*B))*fe_values.JxW(q_point);
-
-          if(rho_values[q_point])
-          {
-            double dw_df_delta_F = 0.0;
-            for(unsigned int l = 0; l < DIM; l++)
-              for(unsigned int j = 0; j<DIM; ++j)
-                dw_df_delta_F += dW_dF[l][j]*fe_values[displacements].gradient(n, q_point)[l][j];
-
-            cell_rhs(n) -= (dw_df_delta_F + dW_dB*delta_B)*fe_values.JxW(q_point);
-          }
+          cell_rhs(n) -= dW_dB*delta_B*JxW;
+          for (unsigned int i=0; i<DIM; ++i)
+            for (unsigned int j=0; j<DIM; ++j)
+            {
+              cell_rhs(n) -= dW_dF[i][j]*fe_values[displacements].gradient(n, q_point)[i][j]*JxW;
+            }
 
         }
       }
@@ -1174,7 +1094,7 @@ namespace compressed_strip
 
     std::vector<double>     nu_values (n_q_points);
     std::vector<double>     mu_values (n_q_points);
-    std::vector<double>     ms_values (n_q_points);
+    std::vector<double>     chi_values (n_q_points);
 
     std::vector<bool>     rho_values (n_q_points);
 
@@ -1198,16 +1118,13 @@ namespace compressed_strip
       rho->bool_value_list(fe_values.get_quadrature_points(), rho_values);
       nu.value_list (fe_values.get_quadrature_points(), nu_values);
       mu->value_list     (fe_values.get_quadrature_points(), mu_values);
-      ms->value_list     (fe_values.get_quadrature_points(), ms_values);
+      chi->value_list     (fe_values.get_quadrature_points(), chi_values);
 
 
       for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
       {
         Tensor<1, DIM> B = get_B(old_potential_gradients[q_point]);
         Tensor<2,DIM> F = get_deformation_gradient(old_displacement_gradients[q_point]);
-        Tensor<2, DIM> F_inv = invert(F);
-        double II_F = determinant(F);
-        double over_Jmu0 = 1.0/(II_F*MU0);
 
 //        Tensor<2,DIM> dW_dF = nh.get_piola_kirchoff_tensor(nu_values[q_point], mu_values[q_point],
 //                                                        F, F_inv, II_F);
@@ -1229,13 +1146,8 @@ namespace compressed_strip
 //
 //        congugate_lambda += (dlambda1_dlambda*dW_dF[0][0] + dlambda2_dlambda*dW_dF[1][1])
 //                             *fe_values.JxW(q_point);
-        if(rho_values[q_point])
-        {
-          double W = nh.get_energy(nu_values[q_point], mu_values[q_point], ms_values[q_point], SUS,  F, II_F, B);
-          system_energy += W*fe_values.JxW(q_point);
-        }
 
-        system_energy += 0.5*over_Jmu0*((F*B)*(F*B))*fe_values.JxW(q_point);
+        system_energy += nh.get_energy(rho_values[q_point], nu_values[q_point], mu_values[q_point], chi_values[q_point], MS,  F, B)*fe_values.JxW(q_point);
       }
     }
 
@@ -2250,12 +2162,12 @@ namespace compressed_strip
       else if (valuesWritten == 2)
       {
         mu = new MuFunction(kappa, l1);
-        ms = new MsFunction(l1);
+        chi = new ChiFunction(l1);
       }
       else
       {
         mu = new MuFunction(kappa);
-        ms = new MsFunction(1.0);
+        chi = new ChiFunction(1.0);
       }
 
 

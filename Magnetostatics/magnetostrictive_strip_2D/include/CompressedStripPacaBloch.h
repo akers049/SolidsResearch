@@ -133,15 +133,15 @@ namespace compressed_strip
 
    };
 
-   class MsFunction : public Function<DIM>
+   class ChiFunction : public Function<DIM>
    {
 
    public:
-     MsFunction (double length) : Function<DIM>()
+     ChiFunction (double length) : Function<DIM>()
      {
        L1 = length;
      }
-     virtual ~MsFunction (){}
+     virtual ~ChiFunction (){}
 
      // const double PI = std::atan(1.0)*4;
 
@@ -351,7 +351,7 @@ namespace compressed_strip
     char output_directory[MAXLINE];
 
     NuFunction nu;
-    MsFunction *ms = NULL;
+    ChiFunction *chi = NULL;
     MuFunction *mu = NULL;
     RhoFunction *rho = NULL;
 
