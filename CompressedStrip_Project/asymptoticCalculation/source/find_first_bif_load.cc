@@ -36,10 +36,5 @@ int main ()
   // get the critical lambda value
   ep.evaluation_point = ep.present_solution;
 
-  double lambda_c = ep.bisect_find_lambda_critical(ep.critical_lambda_analytical - 0.05,
-                                               ep.critical_lambda_analytical + 0.05, 1e-6, 50);
-
-  std::cout << "The lambda_c is: " << lambda_c << std::endl;
-
   return(0);
 }

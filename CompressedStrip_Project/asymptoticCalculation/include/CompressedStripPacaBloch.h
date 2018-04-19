@@ -58,6 +58,8 @@
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
 
+#include <gsl/gsl_integration.h>
+
 #include "Constituitive.h"
 
 
@@ -149,36 +151,15 @@ namespace compressed_strip
 
     void assemble_system_energy_and_congugate_lambda();
 
-    void update_bloch_wave_constraints(double wave_ratio);
-
     void update_F0(const double lambda);
-    void add_small_pertubations(double amplitude, bool firstTime);
 
-    void newton_iterate();
-
-    void path_follow_PACA_iterate(Vector<double> *solVectorDir,
-                                         double lambdaGuess, double ds);
-
-    unsigned int get_system_eigenvalues(double lambda_eval, const int cycle);
-    void get_bloch_eigenvalues(const int cycle, const int step, double wave_ratio, unsigned int indx);
-    void set_unstable_eigenvector_as_initial_tangent(unsigned int indx);
-
-    double bisect_find_lambda_critical(double lowerBound, double upperBound,
-                                      double tol, unsigned int maxIter);
     void output_results(const unsigned int cycle) const;
     void output_load_info(std::vector<double> lambda_values,
                          std::vector<double> energy_values,
                          std::vector<double> congugate_lambda_values,
                          std::vector<double> displacement_magnitude,
                          const unsigned int cycle)  const;
-
     void read_input_file(char* filename);
-
-    void save_current_state(unsigned int indx);
-    void load_state(unsigned int indx);
-    void load_intial_tangent();
-    void set_boundary_values();
-    void print_dof_coords_and_vals(unsigned int indx);
 
     // get methods for important constants
     double get_present_lambda(){return present_lambda;};
@@ -186,15 +167,12 @@ namespace compressed_strip
               { present_lambda = lambda_val;
                 update_F0(present_lambda); };
     double get_ds(){return ds;};
-    unsigned int get_output_every(){return output_every;};
-    unsigned int get_load_steps(){return load_steps;};
     unsigned int get_n_dofs(){return dof_handler.n_dofs();};
     unsigned int get_number_active_cells(){return triangulation.n_active_cells();};
     unsigned int get_number_unit_cells(){return number_unit_cells;};
 
     Vector<double>       present_solution;
     Vector<double>       evaluation_point;
-    Vector<double>       initial_solution_tangent;
     double               initial_lambda_tangent = 0.0;
 
 
@@ -206,35 +184,41 @@ namespace compressed_strip
 
 
   private:
+
+    void get_grad_u1_value_list(const std::vector< Point< DIM > > &  points, std::vector<Tensor<2, DIM>> value_list);
+
+
+    void get_grad_u2_value_list(const std::vector< Point< DIM > > &  points, std::vector<Tensor<2, DIM>> value_list);
+
+    double E1(double x2);
+    double E2(double x2);
+    double E2_tilde(double x2);
+
+    double E1exp(double x2, void *params)
+    {
+      unsigned int i = *(unsigned int *) params;
+      return( exp(-r[i]*x2)*E1(x2));
+    };
+
+    double E2exp(double x2, void *params)
+    {
+      unsigned int i = *(unsigned int *) params;
+      return( exp(-r[i]*x2)*E2(x2));
+    };
+
+    double L(unsigned int i, unsigned int j, unsigned int k, unsigned int l)
+    {
+      return L_tensor[i-1][j-1][k-1][l-1];
+    };
+    double M(unsigned int i, unsigned int j, unsigned int k, unsigned int l,unsigned int m, unsigned int n)
+    {
+      return M_tensor[i-1][j-1][k-1][l-1][m-1][n-1];
+    };
+
     Tensor<2,DIM> get_deformation_gradient(std::vector<Tensor<1,DIM> > old_solution_gradient);
-
-    void setup_system_constraints();
-    void make_periodicity_constraints();
-    void make_ave_x1_constraints();
-    void make_symmetry_constraints();
-    void setup_bloch ();
-
-    void assemble_system_matrix();
-    void assemble_system_rhs();
-    void assemble_drhs_dlambda();
-    void assemble_bloch_matrix();
-
-    void apply_boundaries_and_constraints_system_matrix();
-    void apply_boundaries_to_rhs(Vector<double> *rhs, std::vector<bool> *homogenous_dirichlet_dofs);
-    void apply_boundaries_and_constraints_bloch_matrix();
-
-
-    void line_search_and_add_step_length(double current_residual, std::vector<bool> *homogenous_dirichlet_dofs);
-
-    void line_search_and_add_step_length_PACA(double last_residual, std::vector<bool> *homogenous_dirichlet_dofs,
-                                              Vector<double> *previousSolution, double previousLambda, double ds);
-    void solve();
-    void solve_boarder_matrix_system();
 
     void getNextDataLine( FILE* const filePtr, char* nextLinePtr,
                             int const maxSize, int* const endOfFileFlag);
-
-
 
     void renumber_boundary_ids();
 
@@ -244,46 +228,47 @@ namespace compressed_strip
 
     FESystem<DIM>        fe;
 
-    ConstraintMatrix     constraints;
-    ConstraintMatrix     constraints_bloch;
-    ConstraintMatrix     bloch_hanging_node_constraints;
-
-
     std::vector<IndexSet>    owned_partitioning;
     std::vector<IndexSet>    relevant_partitioning;
 
     SparsityPattern      sparsity_pattern;
     SparseMatrix<double> system_matrix;
 
-    SparsityPattern      sparsity_pattern_bloch;
-    SparseMatrix<double> bloch_matrix;
-
     Compressible_NeoHookean nh;
 
     double               present_lambda = 0.0;
-    double               lambda_update= 0.0;
-
-    Vector<double>       newton_update;
-    Vector<double>       system_rhs;
-    Vector<double>       drhs_dlambda;
-    Vector<double>       solution_diff;
-    double               lambda_diff = 0.0;
-    double               rhs_bottom = 0.0;
 
     Tensor<2,DIM>        F0;
 
     std::vector<unsigned int>  grid_dimensions;
     bool nonUniform_mesh_flag = false;
     std::vector<double> domain_dimensions;
-    double tol = 0.0;
-    unsigned int maxIter = 0;
     double kappa = 0.0;
 
+    double L1 = 1.0;
+    double tol = 0.0;
+    unsigned int maxIter = 1;
     double ds = 0.0;
     unsigned int load_steps = 0;
     unsigned int output_every = 0;
     unsigned int number_unit_cells = 1.0;
 
+    std::vector<double> A;
+    std::vector<double> B;
+    std::vector<double> alphas;
+    std::vector<double> r;
+    std::vector<double> phi1;
+    std::vector<double> phi3;
+    std::vector<double> C;
+    std::vector<double> phi_inv_T_2;
+    std::vector<double> phi_inv_T_4;
+
+    double w_c = 0.0;
+
+    Tensor<4, DIM>  L_tensor;
+    Tensor<6, DIM>  M_tensor;
+
+    bool pieceConstFlag = false;
     bool fileLoadFlag = false;
 
     char output_directory[MAXLINE];
@@ -291,7 +276,9 @@ namespace compressed_strip
     NuFunction nu;
     MuFunction *mu = NULL;
 
-    std::vector<int> matched_dofs;
+    // numerical integration stuff:
+    unsigned long int np = 1000; // work area size
+    gsl_integration_workspace *w = gsl_integration_workspace_alloc (np);
 
   };
 }
