@@ -483,26 +483,6 @@ namespace compressed_strip
 
     bloch_hanging_node_constraints.merge(hanging_nodes_shifted);
 
-
-//    for(unsigned int i = 0; i < number_dofs; i ++)
-//    {
-//      const std::vector< std::pair< types::global_dof_index, double > > *next_constraint_line =
-//         bloch_hanging_node_constraints.get_constraint_entries(i);
-//      if(next_constraint_line != NULL)
-//      {
-//        bloch_hanging_node_constraints.add_line(i + number_dofs);
-//        for(unsigned int j = 0; j < next_constraint_line->size(); j ++)
-//        {
-//        //  std::cout << "(" << i << ", " << (*next_constraint_line)[j].first << ") :   " <<  (*next_constraint_line)[j].second << std::endl;
-//          bloch_hanging_node_constraints.add_entry((i+number_dofs),
-//                                                   ((*next_constraint_line)[j].first + number_dofs),
-//                                                   (*next_constraint_line)[j].second );        }
-//      }
-//    }
-//    bloch_hanging_node_constraints.close();
-
-
-
     // now to do the sparsity stuff, have to make the bloch constraint matrix. Just use
     // some random wave number, say 0.1 (will give entries for all the ones that would
     // generally be there.
@@ -1503,7 +1483,7 @@ namespace compressed_strip
     return num_neg_eigs;
   }
 
-  void ElasticProblem::get_bloch_eigenvalues(const int cycle, const int step, double wave_ratio)
+  void ElasticProblem::get_bloch_eigenvalues(const int cycle, const int step, double wave_ratio, unsigned int indx)
   {
     // The cycle is the number appended onto the end of the file. Step is the current step number,
     // and wave_ratio is the wave ratio value between 0 and 0.5
@@ -1527,7 +1507,7 @@ namespace compressed_strip
     Vector<double> eigenvalues;
     FullMatrix<double> eigenvectors;
 
-    bloch_matrix_full.compute_eigenvalues_symmetric(-10, 0.3, 1e-6, eigenvalues, eigenvectors);
+    bloch_matrix_full.compute_eigenvalues_symmetric(-10, 0.1, 1e-6, eigenvalues, eigenvectors);
 
     std::string filename(output_directory);
     filename += "/bloch_eigenvalues";
@@ -1538,7 +1518,9 @@ namespace compressed_strip
       mkdir(filename.c_str(), 0700);
 
     // open the file
-    filename += "/bloch_eigenvalues-";
+    filename += "/bloch_eigenvalues";
+    filename += std::to_string(indx);
+    filename += "-";
     filename += std::to_string(step);
     filename += "-";
     filename += std::to_string(cycle);
@@ -1610,6 +1592,41 @@ namespace compressed_strip
 
     // also, normalize the tangent vector
     initial_solution_tangent *= (1.0/initial_solution_tangent.l2_norm());
+
+
+    // Want to make sure that localization happens in the middle of the structure.
+    // This can be accomplished by makeing sure the x_2 component of the initial tangent
+    // is negatice at x_1 = 0, x_2 = 1
+    unsigned int number_dofs = dof_handler.n_dofs();
+    std::vector<Point<DIM>> support_points(number_dofs);
+    MappingQ1<DIM> mapping;
+    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
+
+    std::vector<bool> x2_components = {false, true};
+    ComponentMask x2_mask(x2_components);
+
+    std::vector<bool> is_x2_comp(number_dofs);
+
+    DoFTools::extract_dofs(dof_handler, x2_mask, is_x2_comp);
+
+    bool foundFlag = false;
+    for(unsigned int i = 0; i < number_dofs; i++)
+    {
+      if ( (fabs(support_points[i](0)) < 1e-5) && (fabs(support_points[i](1) - 1.0) < 1e-5)
+            && is_x2_comp[i] == true)
+      {
+        foundFlag = true;
+        if (initial_solution_tangent[i] > 0.0)
+          initial_solution_tangent *= -1.0;
+      }
+    }
+
+    if (foundFlag == false)
+    {
+      std::cout << "Did not find a node at x_1 = 0, x_2 = 1. Exiting.\n";
+      exit(-1);
+    }
+
 
     // and finally, just set the lambda tangent to 0.0.
     initial_lambda_tangent = 0.0;

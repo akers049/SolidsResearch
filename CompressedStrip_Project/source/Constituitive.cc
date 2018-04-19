@@ -59,6 +59,86 @@ using namespace dealii;
     return tmp;
   }
 
+  inline
+  Tensor<6, DIM> Compressible_NeoHookean::get_d3W_dFdFdF(const double nu, const double mu,
+                                        Tensor<2,DIM> F_inv, double II_F)
+  {
+    Tensor<6, DIM> tmp;
+
+    const double nu_frac = nu/(1 - nu);
+    const double II_C = II_F*II_F;
+
+    for (unsigned int i=0; i<DIM; ++i)
+      for (unsigned int j=0; j<DIM; ++j)
+        for (unsigned int k=0; k<DIM; ++k)
+          for (unsigned int l=0; l<DIM; ++l)
+           for (unsigned int m=0; m<DIM; ++m)
+             for (unsigned int n=0; n<DIM; ++n)
+             {
+               tmp[i][j][k][l][m][n] =
+                   (2.0*nu_frac*(II_C - II_F) - 1.0)*(F_inv[j][m]*F_inv[n][k]*F_inv[l][i] +
+                                                      F_inv[j][k]*F_inv[l][m]*F_inv[n][i]) +
+                   -4.0*nu_frac*(II_C - 0.5*II_F)*(F_inv[n][m]*F_inv[j][k]*F_inv[l][i] +
+                                                   F_inv[l][m]*F_inv[n][k]*F_inv[j][i] +
+                                                   F_inv[l][k]*F_inv[j][m]*F_inv[n][i]) +
+                    8.0*nu_frac*(II_C - 0.25*II_F)*F_inv[n][m]*F_inv[l][k]*F_inv[j][i];
+             }
+
+    tmp *= mu;
+
+    return tmp;
+  }
+
+  inline
+  Tensor<8, DIM> Compressible_NeoHookean::get_d4W_dFdFdFdF(const double nu, const double mu,
+                                        Tensor<2,DIM> F_inv, double II_F)
+  {
+    Tensor<8, DIM> tmp;
+
+    const double nu_frac = nu/(1 - nu);
+    const double II_C = II_F*II_F;
+
+    for (unsigned int i=0; i<DIM; ++i)
+      for (unsigned int j=0; j<DIM; ++j)
+        for (unsigned int k=0; k<DIM; ++k)
+          for (unsigned int l=0; l<DIM; ++l)
+            for (unsigned int m=0; m<DIM; ++m)
+              for (unsigned int n=0; n<DIM; ++n)
+                for (unsigned int p=0; p<DIM; ++p)
+                  for (unsigned int q=0; q<DIM; ++q)
+                  {
+                    tmp[i][j][k][l][m][n][p][q] =
+                       (1.0 - 2.0*nu_frac*(II_C - II_F))*(F_inv[j][p]*F_inv[q][m]*F_inv[n][k]*F_inv[l][i] +
+                                                          F_inv[j][m]*F_inv[n][p]*F_inv[q][k]*F_inv[l][i] +
+                                                          F_inv[j][m]*F_inv[n][k]*F_inv[l][p]*F_inv[q][i] +
+                                                          F_inv[j][p]*F_inv[q][k]*F_inv[l][m]*F_inv[n][i] +
+                                                          F_inv[j][k]*F_inv[l][p]*F_inv[q][m]*F_inv[n][i] +
+                                                          F_inv[j][k]*F_inv[l][m]*F_inv[n][p]*F_inv[q][i]) +
+                       4.0*nu_frac*(II_C - 0.5*II_F)*(F_inv[j][m]*F_inv[n][k]*F_inv[l][i]*F_inv[q][p] +
+                                                      F_inv[j][k]*F_inv[l][m]*F_inv[n][i]*F_inv[q][p] +
+                                                      F_inv[n][p]*F_inv[q][m]*F_inv[j][k]*F_inv[l][i] +
+                                                      F_inv[n][m]*F_inv[j][p]*F_inv[q][k]*F_inv[l][i] +
+                                                      F_inv[n][m]*F_inv[j][k]*F_inv[l][p]*F_inv[q][i] +
+                                                      F_inv[l][p]*F_inv[q][m]*F_inv[n][k]*F_inv[j][i] +
+                                                      F_inv[l][m]*F_inv[n][p]*F_inv[q][k]*F_inv[j][i] +
+                                                      F_inv[l][m]*F_inv[n][k]*F_inv[j][p]*F_inv[q][i] +
+                                                      F_inv[l][p]*F_inv[q][k]*F_inv[j][m]*F_inv[n][i] +
+                                                      F_inv[l][k]*F_inv[j][p]*F_inv[q][m]*F_inv[n][i] +
+                                                      F_inv[l][k]*F_inv[j][m]*F_inv[n][p]*F_inv[q][i]) +
+                       -8.0*nu_frac*(II_C - 0.25*II_F)*(F_inv[n][m]*F_inv[j][k]*F_inv[l][i]*F_inv[q][p] +
+                                                        F_inv[l][m]*F_inv[n][k]*F_inv[j][i]*F_inv[q][p] +
+                                                        F_inv[l][k]*F_inv[j][m]*F_inv[n][i]*F_inv[q][p] +
+                                                        F_inv[n][p]*F_inv[q][m]*F_inv[l][k]*F_inv[j][i] +
+                                                        F_inv[n][m]*F_inv[l][p]*F_inv[q][k]*F_inv[j][i] +
+                                                        F_inv[n][m]*F_inv[l][k]*F_inv[j][p]*F_inv[q][i]) +
+                       16.0*nu_frac*(II_C - 0.125*II_F)*F_inv[n][m]*F_inv[l][k]*F_inv[j][i]*F_inv[q][p];
+                 }
+
+    tmp *= mu;
+
+    return tmp;
+  }
+
   // The linear one
 
   inline

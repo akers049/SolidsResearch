@@ -39,14 +39,13 @@ int main ()
   ep.assemble_system_energy_and_congugate_lambda();
 
 
-  double lambda_start = lambda_c + 1e-6;
+  double lambda_start = lambda_c + 1e-5;
   ep.set_present_lambda(lambda_start);
   ep.newton_iterate();
   ep.output_results (1);
 
   // set the eigenvector for the unstable mode
   ep.set_unstable_eigenvector_as_initial_tangent(1);
- // ep.initial_solution_tangent *= -1.0;
 
   Vector<double> previous_solution = ep.present_solution;
   double previous_lambda = lambda_start;
@@ -64,11 +63,6 @@ int main ()
   std::vector<double> congugate_lambda_values;
   std::vector<double> energy_values;
   std::vector<double> displacement_magnitude;
-  lambda_values.push_back(0.0);
-  congugate_lambda_values.push_back(ep.congugate_lambda/ep.get_number_unit_cells());
-  energy_values.push_back( ep.system_energy/ep.get_number_unit_cells());
-  displacement_magnitude.push_back(ep.present_solution.l2_norm()/ep.get_number_unit_cells());
-
 
   unsigned int num_negative_eigs = 0;
   unsigned int prev_num_negative_eigs = 0;
@@ -108,10 +102,10 @@ int main ()
    displacement_magnitude.push_back(ep.present_solution.l2_norm()/(sqrt(1.0*ep.get_number_unit_cells())));
 
    prev_num_negative_eigs = num_negative_eigs;
-   num_negative_eigs = ep.get_system_eigenvalues(ep.get_present_lambda(), i);
+//num_negative_eigs = ep.get_system_eigenvalues(ep.get_present_lambda(), i);
    std::cout << "    Number negative Eigenvalues : " << num_negative_eigs << std::endl;
    std::cout << "    Step Number : " << step_number << std::endl;
-   if ((i > 40 && num_negative_eigs == (prev_num_negative_eigs + 1)))
+   if ((i > 10 && num_negative_eigs == (prev_num_negative_eigs + 1)))
    {
      std::cout << "\n Eigenvalue Crossing Found. Outputting current state and stopping" << std::endl;
      break;

@@ -37,12 +37,12 @@ int main ()
 
   ep.set_unstable_eigenvector_as_initial_tangent(number_negative_eigs);
 
-  ep.initial_lambda_tangent = 0.5;
+  ep.initial_lambda_tangent = 0.3;
   double scalingVal = sqrt(1 - ep.initial_lambda_tangent*ep.initial_lambda_tangent);
-  ep.initial_solution_tangent *= -1.0*scalingVal;
+  ep.initial_solution_tangent *= scalingVal;
 
-  ep.set_present_lambda(ep.get_present_lambda() -  5e-5);
-  ep.newton_iterate();
+//  ep.set_present_lambda(ep.get_present_lambda() -  5e-5);
+//  ep.newton_iterate();
 
 
   double previous_lambda = ep.get_present_lambda();
@@ -51,14 +51,14 @@ int main ()
   ep.path_follow_PACA_iterate(&(ep.initial_solution_tangent), ep.initial_lambda_tangent, ep.get_ds());
 
   // trying something
-  if (ep.get_number_unit_cells()%2 == 0)
-  {
-    ep.initial_solution_tangent = ep.present_solution;
-    ep.initial_solution_tangent -= previous_solution;
-    ep.initial_solution_tangent *= -1.0;
-
-    ep.path_follow_PACA_iterate(&(ep.initial_solution_tangent), 0.0, 2.0*ep.get_ds());
-  }
+//  if (ep.get_number_unit_cells()%2 == 0)
+//  {
+//    ep.initial_solution_tangent = ep.present_solution;
+//    ep.initial_solution_tangent -= previous_solution;
+//    ep.initial_solution_tangent *= -1.0;
+//
+//    ep.path_follow_PACA_iterate(&(ep.initial_solution_tangent), 0.0, 2.0*ep.get_ds());
+//  }
 
   // define variables for the tangent to next start point.
   Vector<double> solution_tangent;

@@ -150,6 +150,7 @@ namespace compressed_strip
     void setup_system ();
 
     void assemble_system_energy_and_congugate_lambda();
+    void assemble_asymptotic_integrals();
 
     void update_F0(const double lambda);
 
@@ -166,7 +167,6 @@ namespace compressed_strip
     void set_present_lambda(double lambda_val)
               { present_lambda = lambda_val;
                 update_F0(present_lambda); };
-    double get_ds(){return ds;};
     unsigned int get_n_dofs(){return dof_handler.n_dofs();};
     unsigned int get_number_active_cells(){return triangulation.n_active_cells();};
     unsigned int get_number_unit_cells(){return number_unit_cells;};
@@ -177,6 +177,9 @@ namespace compressed_strip
 
 
     double               system_energy = 0.0;
+    double               E_u1u1u1u1 = 0.0;
+    double               E_u2u1u1 = 0.0;
+    double               dEdlambda_u1u1 = 0.0;
     double               congugate_lambda = 0.0;
 
     double critical_lambda_analytical = 0.0;
@@ -194,18 +197,28 @@ namespace compressed_strip
     double E2(double x2);
     double E2_tilde(double x2);
 
-    double E1exp(double x2, void *params)
+    double E1exp_real(double x2, void *params)
     {
       unsigned int i = *(unsigned int *) params;
-      return( exp(-r[i]*x2)*E1(x2));
+      return( exp(-r_real[i]*x2)*cos(-r_imag[i]*x2)*E1(x2));
     };
 
-    double E2exp(double x2, void *params)
+    double E1exp_imag(double x2, void *params)
     {
       unsigned int i = *(unsigned int *) params;
-      return( exp(-r[i]*x2)*E2(x2));
+      return( exp(-r_real[i]*x2)*sin(-r_imag[i]*x2)*E1(x2));
     };
 
+    double E2exp_real(double x2, void *params)
+    {
+      unsigned int i = *(unsigned int *) params;
+      return( exp(-r_real[i]*x2)*cos(-r_imag[i]*x2)*E2(x2));
+    };
+    double E2exp_imag(double x2, void *params)
+    {
+      unsigned int i = *(unsigned int *) params;
+      return( exp(-r_real[i]*x2)*sin(-r_imag[i]*x2)*E2(x2));
+    };
     double L(unsigned int i, unsigned int j, unsigned int k, unsigned int l)
     {
       return L_tensor[i-1][j-1][k-1][l-1];
@@ -246,22 +259,22 @@ namespace compressed_strip
     double kappa = 0.0;
 
     double L1 = 1.0;
-    double tol = 0.0;
-    unsigned int maxIter = 1;
-    double ds = 0.0;
-    unsigned int load_steps = 0;
-    unsigned int output_every = 0;
-    unsigned int number_unit_cells = 1.0;
 
-    std::vector<double> A;
-    std::vector<double> B;
-    std::vector<double> alphas;
-    std::vector<double> r;
+    unsigned int number_unit_cells = 1;
+
+    std::vector<std::complex<double>> A;
+    std::vector<std::complex<double>> B;
+    std::vector<std::complex<double>> alphas;
+    std::vector<std::complex<double>> r;
+
+    std::vector<double> r_real;
+    std::vector<double> r_imag;
+
     std::vector<double> phi1;
     std::vector<double> phi3;
-    std::vector<double> C;
-    std::vector<double> phi_inv_T_2;
-    std::vector<double> phi_inv_T_4;
+    std::vector<std::complex<double>> C;
+    std::vector<std::complex<double>> phi_inv_T_2;
+    std::vector<std::complex<double>> phi_inv_T_4;
 
     double w_c = 0.0;
 

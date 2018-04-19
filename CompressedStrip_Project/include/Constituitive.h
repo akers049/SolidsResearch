@@ -22,7 +22,10 @@ using namespace dealii;
     virtual Tensor<4,DIM> get_incremental_moduli_tensor(const double nu,
                                                 const double mu, Tensor<2,DIM> F_inv,
                                                 double II_F);
-
+    virtual Tensor<6, DIM> get_d3W_dFdFdF(const double nu, const double mu,
+                                          Tensor<2,DIM> F_inv, double II_F);
+    virtual Tensor<8, DIM> get_d4W_dFdFdFdF(const double nu, const double mu,
+                                            Tensor<2,DIM> F_inv, double II_F);
   };
 
   class LinearLagrangian

@@ -49,10 +49,6 @@ int main ()
   double scalingVal = sqrt(1 - ep.initial_lambda_tangent*ep.initial_lambda_tangent);
   ep.initial_solution_tangent *= -1.0*scalingVal;
 
-  ep.set_present_lambda(ep.get_present_lambda() -  5e-5);
-  ep.newton_iterate();
-
-
   double previous_lambda = ep.get_present_lambda();
   previous_solution = ep.present_solution;
 
@@ -79,7 +75,7 @@ int main ()
       for(unsigned int j = 0; j < 50; j++)
       {
         double wave_ratio = j*0.01;
-        ep.get_bloch_eigenvalues(j, i/30, wave_ratio);
+        ep.get_bloch_eigenvalues(j, i/30, wave_ratio, 1);
       }
     }
 
@@ -110,7 +106,7 @@ int main ()
     displacement_magnitude[i] = ep.present_solution.l2_norm()/(sqrt(1.0*ep.get_number_unit_cells()));
 
   }
-  ep.output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude, 0);
+  ep.output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude, 10);
 }
 
 

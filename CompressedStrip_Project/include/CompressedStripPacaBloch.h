@@ -102,9 +102,19 @@ namespace compressed_strip
    {
 
    public:
-     MuFunction (double expontential_growth_param) : Function<DIM>()
+     MuFunction (double mu_1, double l1 = 0.0) : Function<DIM>()
      {
-       kappa = expontential_growth_param;
+       kappa = mu_1;
+
+       if ( l1 != 0.0)
+       {
+         Assert ((l1 > 0 && l1 < 1.0), ExcNotImplemented());
+         pieceConstFlag = true;
+         L1 = l1;
+       }
+       else
+         pieceConstFlag = false;
+
      }
      virtual ~MuFunction (){}
 
@@ -117,6 +127,8 @@ namespace compressed_strip
                               std::vector< double > &   values,
                               const unsigned int  component = 0 )   const;
 
+     bool pieceConstFlag;
+     double L1;
      double kappa;
      const double mu0 = 1.0;
 
@@ -148,8 +160,8 @@ namespace compressed_strip
                                          double lambdaGuess, double ds);
 
     unsigned int get_system_eigenvalues(double lambda_eval, const int cycle);
-    void get_bloch_eigenvalues(const int cycle, const int step, double wave_ratio);
-    void set_unstable_eigenvector_as_initial_tangent(unsigned int index);
+    void get_bloch_eigenvalues(const int cycle, const int step, double wave_ratio, unsigned int indx);
+    void set_unstable_eigenvector_as_initial_tangent(unsigned int indx);
 
     double bisect_find_lambda_critical(double lowerBound, double upperBound,
                                       double tol, unsigned int maxIter);
@@ -162,11 +174,11 @@ namespace compressed_strip
 
     void read_input_file(char* filename);
 
-    void save_current_state();
-    void load_state();
+    void save_current_state(unsigned int indx);
+    void load_state(unsigned int indx);
     void load_intial_tangent();
     void set_boundary_values();
-    void print_dof_coords_and_vals(unsigned int index);
+    void print_dof_coords_and_vals(unsigned int indx);
 
     // get methods for important constants
     double get_present_lambda(){return present_lambda;};

@@ -86,7 +86,7 @@ int main ()
       for(unsigned int j = 0; j < 50; j++)
       {
         double wave_ratio = j*0.01;
-        ep.get_bloch_eigenvalues(j, i/30, wave_ratio);
+        ep.get_bloch_eigenvalues(j, i/30, wave_ratio, 0);
       }
     }
 

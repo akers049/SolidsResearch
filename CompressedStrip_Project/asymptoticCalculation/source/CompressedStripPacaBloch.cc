@@ -227,12 +227,11 @@ namespace compressed_strip
   {
 
     Tensor<2, DIM> tmp;
+    Tensor<2, DIM, std::complex<double>> tmp_complex;
     for (unsigned int point_n = 0; point_n < points.size(); ++point_n)
     {
       double x1 = points[point_n](0);
       double x2 = points[point_n](1);
-
-      tmp =  0;
 
       unsigned int t = 0;
       if(x2 > L1)
@@ -240,20 +239,19 @@ namespace compressed_strip
 
       for(unsigned int i = 0; i < 4; i++)
       {
-        double Ae = A[i + t]*exp(alphas[i]*x2);
-        double AeB = Ae*B[i];
+        std::complex<double> Ae = A[i + t]*std::exp(alphas[i]*x2);
+        std::complex<double> AeB = Ae*B[i];
 
-        tmp[0][0] += Ae;
-        tmp[0][1] += Ae*alphas[i];
-        tmp[1][0] += AeB;
-        tmp[1][1] += AeB*alphas[i];
-
+        tmp_complex[0][0] += Ae;
+        tmp_complex[0][1] += Ae*alphas[i];
+        tmp_complex[1][0] += AeB;
+        tmp_complex[1][1] += AeB*alphas[i];
       }
 
-      tmp[0][0] *= -critical_frequency*cos(critical_frequency*x1);
-      tmp[0][1] *= -sin(critical_frequency*x1);
-      tmp[0][0] *= -critical_frequency*sin(critical_frequency*x1);
-      tmp[0][1] *= cos(critical_frequency*x1);
+      tmp[0][0] = -critical_frequency*cos(critical_frequency*x1)*(tmp_complex[0][0]).real();
+      tmp[0][1] = -sin(critical_frequency*x1)*(tmp_complex[0][1]).real();
+      tmp[0][0] = -critical_frequency*sin(critical_frequency*x1)*(tmp_complex[1][0]).real();
+      tmp[0][1] = cos(critical_frequency*x1)*(tmp_complex[1][1]).real();
 
       value_list[point_n] = tmp;
     }
@@ -262,12 +260,12 @@ namespace compressed_strip
   void ElasticProblem::get_grad_u2_value_list(const std::vector< Point< DIM > > &  points, std::vector<Tensor<2, DIM>> value_list)
   {
     Tensor<2, DIM> tmp;
+    Tensor<2, DIM, std::complex<double>> tmp_complex;
+
     for (unsigned int point_n = 0; point_n < points.size(); ++point_n)
     {
       double x1 = points[point_n](0);
       double x2 = points[point_n](1);
-
-      tmp =  0;
 
       unsigned int t = 0;
       if(x2 > L1)
@@ -276,18 +274,20 @@ namespace compressed_strip
       // homogenous part first
       for(unsigned int i = 0; i < 4; i++)
       {
-        double Ce = C[i + t]*exp(r[i]*x2);
+        std::complex<double> Ce = C[i + t]*std::exp(r[i]*x2);
 
-        tmp[0][0] += phi1[i]*Ce;
-        tmp[0][1] += r[i]*phi1[i]*Ce;
-        tmp[1][0] += phi3[i]*Ce;
-        tmp[1][1] += r[i]*phi3[i]*Ce;
-
+        tmp_complex[0][0] += phi1[i]*Ce;
+        tmp_complex[0][1] += r[i]*phi1[i]*Ce;
+        tmp_complex[1][0] += phi3[i]*Ce;
+        tmp_complex[1][1] += r[i]*phi3[i]*Ce;
       }
 
       // Now do that particular part
-      std::vector<double> E1_exp_integral(4);
-      std::vector<double> E2_exp_integral(4);
+      std::vector<double> E1_exp_integral_real(4);
+      std::vector<double> E2_exp_integral_real(4);
+
+      std::vector<double> E1_exp_integral_imag(4);
+      std::vector<double> E2_exp_integral_imag(4);
 
       double a = 0;
       if(x2 > L1)
@@ -297,15 +297,20 @@ namespace compressed_strip
       double error; // the error estimate
 
       ElasticProblem* ptr_1 = this;
-      auto ptr1 = [=](double x, void *params)->double{return ptr_1->E1exp(x, params);};
-      auto ptr2 = [=](double x, void *params)->double{return ptr_1->E2exp(x, params);};
+      auto ptr1 = [=](double x, void *params)->double{return ptr_1->E1exp_real(x, params);};
+      auto ptr2 = [=](double x, void *params)->double{return ptr_1->E2exp_real(x, params);};
+      auto ptr3 = [=](double x, void *params)->double{return ptr_1->E1exp_imag(x, params);};
+      auto ptr4 = [=](double x, void *params)->double{return ptr_1->E2exp_imag(x, params);};
 
       gsl_function_pp<decltype(ptr1)> Fp1(ptr1);
       gsl_function_pp<decltype(ptr2)> Fp2(ptr2);
+      gsl_function_pp<decltype(ptr3)> Fp3(ptr3);
+      gsl_function_pp<decltype(ptr4)> Fp4(ptr4);
 
       gsl_function *F1 = static_cast<gsl_function*>(&Fp1);
       gsl_function *F2 = static_cast<gsl_function*>(&Fp2);
-
+      gsl_function *F3 = static_cast<gsl_function*>(&Fp3);
+      gsl_function *F4 = static_cast<gsl_function*>(&Fp4);
 
 //      gsl_function F1 = &this->E1exp;
 //      gsl_function F2 = &this->E2exp;
@@ -314,38 +319,51 @@ namespace compressed_strip
       {
         F1->params = &i;
         F2->params = &i;
+        F3->params = &i;
+        F4->params = &i;
 
         gsl_integration_qag (F1, a, x2, abserr, relerr, np,
-            GSL_INTEG_GAUSS15, w, &(E1_exp_integral[i]), &error);
+            GSL_INTEG_GAUSS15, w, &(E1_exp_integral_real[i]), &error);
         gsl_integration_qag (F2, a, x2, abserr, relerr, np,
-            GSL_INTEG_GAUSS15, w, &(E2_exp_integral[i]), &error);
+            GSL_INTEG_GAUSS15, w, &(E2_exp_integral_real[i]), &error);
+        gsl_integration_qag (F1, a, x2, abserr, relerr, np,
+            GSL_INTEG_GAUSS15, w, &(E1_exp_integral_imag[i]), &error);
+        gsl_integration_qag (F2, a, x2, abserr, relerr, np,
+            GSL_INTEG_GAUSS15, w, &(E2_exp_integral_imag[i]), &error);
 
-        E1_exp_integral[i] *= (-1.0/L(1,2,1,2));
-        E2_exp_integral[i] *= (-1.0/L(2,2,2,2));
+        E1_exp_integral_real[i] *= (-1.0/L(1,2,1,2));
+        E2_exp_integral_real[i] *= (-1.0/L(2,2,2,2));
+        E1_exp_integral_imag[i] *= (-1.0/L(1,2,1,2));
+        E2_exp_integral_imag[i] *= (-1.0/L(2,2,2,2));
       }
 
-      std::vector<double> exp_integral_eh(4);
-      std::vector<double> h(4);
+      std::vector<std::complex<double>> exp_integral_eh(4);
+      std::vector<std::complex<double>> h(4);
+
+      std::vector<std::complex<double>> E1_exp_integral(4);
+      std::vector<std::complex<double>> E2_exp_integral(4);
       for(unsigned int i = 0; i < 4; i++)
       {
-        exp_integral_eh[i] = exp(r[i]*x2)*
-                            (phi_inv_T_2[i]*E1_exp_integral[i] + phi_inv_T_4[i]*E2_exp_integral[i]);
+        E1_exp_integral[i] = std::complex<double>(E1_exp_integral_real[i], E1_exp_integral_imag[i]);
+        E2_exp_integral[i] = std::complex<double>(E2_exp_integral_real[i], E2_exp_integral_imag[i]);
+        exp_integral_eh[i] = std::exp(r[i]*x2)*
+                             (phi_inv_T_2[i]*E1_exp_integral[i] + phi_inv_T_4[i]*E2_exp_integral[i]);
 
         h[i] = -(1.0/L(1,2,1,2))*phi_inv_T_2[i]*E1(x1) - (1.0/L(2,2,2,2))*phi_inv_T_4[i]*E2(x2);
 
-        tmp[0][0] += phi1[i]*exp_integral_eh[i];
-        tmp[0][1] += phi1[i]*(r[i]*exp_integral_eh[i] + h[i]);
-        tmp[1][0] += phi3[i]*exp_integral_eh[i];
-        tmp[1][1] += phi3[i]*(r[i]*exp_integral_eh[i] + h[i]);
+        tmp_complex[0][0] += phi1[i]*exp_integral_eh[i];
+        tmp_complex[0][1] += phi1[i]*(r[i]*exp_integral_eh[i] + h[i]);
+        tmp_complex[1][0] += phi3[i]*exp_integral_eh[i];
+        tmp_complex[1][1] += phi3[i]*(r[i]*exp_integral_eh[i] + h[i]);
       }
 
 
       tmp[1][1] += E2_tilde(x2);
 
-      tmp[0][0] *= 2*w_c*cos(2*w_c*x1);
-      tmp[0][1] *= sin(2*w_c*x1);
-      tmp[0][0] *= -2*w_c*sin(2*w_c*x1);
-      tmp[0][1] *= cos(2*w_c*x1);
+      tmp[0][0] = 2*w_c*cos(2*w_c*x1)*(tmp_complex[0][0]).real();
+      tmp[0][1] = sin(2*w_c*x1)*(tmp_complex[0][1]).real();
+      tmp[0][0] = -2*w_c*sin(2*w_c*x1)*(tmp_complex[1][0]).real();
+      tmp[0][1] = cos(2*w_c*x1)*(tmp_complex[1][1]).real();
 
       value_list[point_n] = tmp;
     }
@@ -366,17 +384,16 @@ namespace compressed_strip
     double v2_11 = 0.0;
     for(unsigned int i = 0; i < 4; i++)
     {
-      double Ae = A[i + t]*exp(alphas[i]*x2);
-      double AeB = Ae*B[i];
+      std::complex<double> Ae = A[i + t]*std::exp(alphas[i]*x2);
+      std::complex<double> AeB = Ae*B[i];
 
-      v1 += Ae;
-      v1_1 += alphas[i]*Ae;
-      v1_11 += alphas[i]*alphas[i]*Ae;
+      v1 += (Ae).real();
+      v1_1 += (alphas[i]*Ae).real();
+      v1_11 += (alphas[i]*alphas[i]*Ae).real();
 
-      v2 += AeB;
-      v2_1 += alphas[i]*AeB;
-      v2_11 += alphas[i]*alphas[i]*AeB;
-
+      v2 += (AeB).real();
+      v2_1 += (alphas[i]*AeB).real();
+      v2_11 += (alphas[i]*alphas[i]*AeB).real();
 
     }
 
@@ -412,16 +429,16 @@ namespace compressed_strip
     double v2_11 = 0.0;
     for(unsigned int i = 0; i < 4; i++)
     {
-      double Ae = A[i + t]*exp(alphas[i]*x2);
-      double AeB = Ae*B[i];
+      std::complex<double> Ae = A[i + t]*std::exp(alphas[i]*x2);
+      std::complex<double> AeB = Ae*B[i];
 
-      v1 += Ae;
-      v1_1 += alphas[i]*Ae;
-      v1_11 += alphas[i]*alphas[i]*Ae;
+      v1 += (Ae).real();
+      v1_1 += (alphas[i]*Ae).real();
+      v1_11 += (alphas[i]*alphas[i]*Ae).real();
 
-      v2 += AeB;
-      v2_1 += alphas[i]*AeB;
-      v2_11 += alphas[i]*alphas[i]*AeB;
+      v2 += (AeB).real();
+      v2_1 += (alphas[i]*AeB).real();
+      v2_11 += (alphas[i]*alphas[i]*AeB).real();
     }
 
     double w_c_2 = w_c*w_c;
@@ -455,14 +472,14 @@ namespace compressed_strip
     double v2_1 = 0.0;
     for(unsigned int i = 0; i < 4; i++)
     {
-      double Ae = A[i + t]*exp(alphas[i]*x2);
-      double AeB = Ae*B[i];
+      std::complex<double> Ae = A[i + t]*std::exp(alphas[i]*x2);
+      std::complex<double> AeB = Ae*B[i];
 
-      v1 += Ae;
-      v1_1 += alphas[i]*Ae;
+      v1 += (Ae).real();
+      v1_1 += (alphas[i]*Ae).real();
 
-      v2 += AeB;
-      v2_1 += alphas[i]*AeB;
+      v2 += (AeB).real();
+      v2_1 += (alphas[i]*AeB).real();
     }
 
     double w_c_2 = w_c*w_c;
@@ -567,6 +584,114 @@ namespace compressed_strip
 
         double W = nh.get_energy(nu_values[q_point], mu_values[q_point], F, II_F);
         system_energy += W*fe_values.JxW(q_point);
+      }
+    }
+
+  }
+
+  void ElasticProblem::assemble_asymptotic_integrals()
+  {
+    double lambda_eval = present_lambda;
+
+    E_u1u1u1u1 = 0.0;
+    E_u2u1u1 = 0.0;
+    dEdlambda_u1u1 = 0.0;
+
+    QGauss<DIM>  quadrature_formula(4);
+
+    FEValues<DIM> fe_values (fe, quadrature_formula,
+                             update_values   | update_gradients |
+                             update_quadrature_points | update_JxW_values);
+
+    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
+    const unsigned int   n_q_points    = quadrature_formula.size();
+
+
+    std::vector<std::vector<Tensor<1,DIM> > > old_solution_gradients(n_q_points,
+                                                std::vector<Tensor<1,DIM>>(DIM));
+
+    std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
+
+    std::vector<double>     nu_values (n_q_points);
+    std::vector<double>     mu_values (n_q_points);
+
+    std::vector<Tensor<2, DIM>> grad_u1(n_q_points);
+    std::vector<Tensor<2, DIM>> grad_u2(n_q_points);
+
+    // get the dF_dlambda
+    double dlambda1_dlambda, dlambda2_dlambda, a_nu;
+
+    dlambda1_dlambda = -1.0;
+
+    a_nu = (2.0*NU_VALUE/(1.0 - NU_VALUE));
+    double lambda1 = 1.0 - lambda_eval;
+    double term1 = 2.0*a_nu*(1.0 + a_nu*lambda1*lambda1);
+    double term2 = -4.0*a_nu*a_nu*lambda1*lambda1;
+    double term3 = (2.0*a_nu*a_nu*lambda1 + 8.0*a_nu*lambda1)*(1.0 + a_nu * lambda1*lambda1)/
+                          sqrt(a_nu*a_nu*lambda1*lambda1 + 4.0 *a_nu*lambda1*lambda1 + 4.0);
+    double term4 = -sqrt(a_nu*a_nu*lambda1*lambda1 + 4.0 *a_nu*lambda1*lambda1 + 4.0)*4.0*a_nu*lambda1;
+
+    dlambda2_dlambda = -(term1 + term2 + term3 + term4)/(4.0*(1 + a_nu*lambda1*lambda1)*(1 + a_nu*lambda1*lambda1));
+
+    Tensor<2, DIM> dF_dlambda;
+    dF_dlambda[0][0] = dlambda1_dlambda;
+    dF_dlambda[0][1] = 0;
+    dF_dlambda[1][0] = 0;
+    dF_dlambda[1][1] = dlambda2_dlambda;
+
+
+    typename DoFHandler<DIM>::active_cell_iterator cell = dof_handler.begin_active(),
+                                                   endc = dof_handler.end();
+    for (; cell!=endc; ++cell)
+    {
+      fe_values.reinit (cell);
+
+      fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
+
+      nu.value_list (fe_values.get_quadrature_points(), nu_values);
+      mu->value_list     (fe_values.get_quadrature_points(), mu_values);
+
+      get_grad_u1_value_list(fe_values.get_quadrature_points(), grad_u1);
+      get_grad_u2_value_list(fe_values.get_quadrature_points(), grad_u2);
+
+      for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+      {
+        Tensor<2,DIM> F = get_deformation_gradient(old_solution_gradients[q_point]);
+        Tensor<2, DIM> F_inv = invert(F);
+        double II_F = determinant(F);
+
+        Tensor<6,DIM> d3W_dF = nh.get_d3W_dFdFdF(nu_values[q_point], mu_values[q_point], F_inv, II_F);
+        Tensor<8,DIM> d4W_dF = nh.get_d4W_dFdFdFdF(nu_values[q_point], mu_values[q_point], F_inv, II_F);
+
+        double contrib_E_u1u1u1u1 = 0.0;
+        double contrib_E_u2u1u1 = 0.0;
+        double contrib_dEdlambda_u1u1 = 0.0;
+        for (unsigned int i=0; i<DIM; ++i)
+          for (unsigned int j=0; j<DIM; ++j)
+            for (unsigned int k=0; k<DIM; ++k)
+              for (unsigned int l=0; l<DIM; ++l)
+                for (unsigned int m=0; m<DIM; ++m)
+                  for (unsigned int n=0; n<DIM; ++n)
+                  {
+                    contrib_E_u2u1u1 +=
+                        d3W_dF[i][j][k][l][m][n]*(grad_u2[q_point])[i][j]*(grad_u1[q_point])[l][k]*(grad_u1[q_point])[m][n];
+
+                    contrib_dEdlambda_u1u1 +=
+                        d3W_dF[i][j][k][l][m][n]*dF_dlambda[i][j]*(grad_u2[q_point])[l][k]*(grad_u2[q_point])[m][n];
+                    for (unsigned int p=0; p<DIM; ++p)
+                      for (unsigned int q=0; q<DIM; ++q)
+                      {
+                        contrib_E_u1u1u1u1 +=
+                            d4W_dF[i][j][k][l][m][n][p][q]*
+                               (grad_u1[q_point])[i][j]*(grad_u1[q_point])[l][k]*
+                               (grad_u1[q_point])[m][n]*(grad_u1[q_point])[p][q];
+
+                      }
+                  }
+
+        E_u1u1u1u1 += contrib_E_u1u1u1u1*fe_values.JxW(q_point);
+        E_u2u1u1 += contrib_E_u2u1u1*fe_values.JxW(q_point);
+        dEdlambda_u1u1 += contrib_dEdlambda_u1u1*fe_values.JxW(q_point);
       }
     }
 
@@ -806,14 +931,6 @@ namespace compressed_strip
 
       grid_dimensions[0] *= number_unit_cells;
 
-      // read in the absolute tolerance of newton iteration
-      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%lg  %u", &tol, &maxIter);
-      if(valuesWritten != 2)
-      {
-        fileReadErrorFlag = true;
-      }
-
       // read in exponential growth parameter and possibly the l1 value
       double l1;
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
@@ -825,11 +942,15 @@ namespace compressed_strip
       }
       else if (valuesWritten == 2)
       {
+        pieceConstFlag = true;
         mu = new MuFunction(kappa, l1);
       }
       else
+      {
+        pieceConstFlag = false;
+        L1 = 1.1;
         mu = new MuFunction(kappa);
-
+      }
 
 
       // read in critical lambda
@@ -850,23 +971,178 @@ namespace compressed_strip
         goto fileClose;
       }
 
-      // read in the critical frequency
-      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%lg %u", &ds, &load_steps);
-      if(valuesWritten != 2)
-      {
-        fileReadErrorFlag = true;
-        goto fileClose;
-      }
 
-      // read in the critical frequency
+      double re1, re2, im1, im2, re3, re4, im3, im4;
+
+      // read in the roots to the characteristic, alphas
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%u", &output_every);
-      if(valuesWritten != 1)
+      valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg %lg %lg %lg %lg",
+          &re1, &im1, &re2, &im2, &re3, &im3, &re4, &im4);
+      if(valuesWritten != 8)
       {
         fileReadErrorFlag = true;
         goto fileClose;
       }
+      alphas.resize(4);
+      alphas[0] = std::complex<double>(re1, im1);
+      alphas[1] = std::complex<double>(re2, im2);
+      alphas[2] = std::complex<double>(re3, im3);
+      alphas[3] = std::complex<double>(re4, im4);
+
+      double re5, re6, im5, im6, re7, re8, im7, im8;
+
+      // read in the amplitude A's
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg %lg %lg %lg %lg %lg %lg %lg %lg %lg %lg %lg %lg",
+          &re1, &im1, &re2, &im2, &re3, &im3, &re4, &im4, &re5, &im5, &re6, &im6, &re7, &im7, &re8, &im8);
+      if((valuesWritten != 8 && valuesWritten != 16)
+          || (pieceConstFlag == (valuesWritten == 8)) )
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+      else if(valuesWritten == 16)
+      {
+        A.resize(8);
+        A[4] = std::complex<double>(re5, im5);
+        A[5] = std::complex<double>(re6, im6);
+        A[6] = std::complex<double>(re7, im7);
+        A[7] = std::complex<double>(re8, im8);
+      }
+      else
+        A.resize(4);
+
+      A[0] = std::complex<double>(re1, im1);
+      A[1] = std::complex<double>(re2, im2);
+      A[2] = std::complex<double>(re3, im3);
+      A[3] = std::complex<double>(re4, im4);
+
+      // read in the B's
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg %lg %lg %lg %lg",
+          &re1, &im1, &re2, &im2, &re3, &im3, &re4, &im4);
+      if(valuesWritten != 8)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+      B.resize(4);
+      B[0] = std::complex<double>(re1, im1);
+      B[1] = std::complex<double>(re2, im2);
+      B[2] = std::complex<double>(re3, im3);
+      B[3] = std::complex<double>(re4, im4);
+
+      // read in the phi1's
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg",
+          &re1, &re2, &re3, &re4);
+      if(valuesWritten != 4)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+      phi1.resize(4);
+      phi1[0] = re1;
+      phi1[1] = re2;
+      phi1[2] = re3;
+      phi1[3] = re4;
+
+      // read in the phi3's
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg",
+          &re1, &re2, &re3, &re4);
+      if(valuesWritten != 4)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+      phi3.resize(4);
+      phi3[0] = re1;
+      phi3[1] = re2;
+      phi3[2] = re3;
+      phi3[3] = re4;
+
+      // read in the phi_inv_T_2
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg %lg %lg %lg %lg",
+          &re1, &im1, &re2, &im2, &re3, &im3, &re4, &im4);
+      if(valuesWritten != 8)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+      phi_inv_T_2[0] = std::complex<double>(re1, im1);
+      phi_inv_T_2[1] = std::complex<double>(re2, im2);
+      phi_inv_T_2[2] = std::complex<double>(re3, im3);
+      phi_inv_T_2[3] = std::complex<double>(re4, im4);
+
+      // read in the phi_inv_T_4
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg %lg %lg %lg %lg",
+          &re1, &im1, &re2, &im2, &re3, &im3, &re4, &im4);
+      if(valuesWritten != 8)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+      phi_inv_T_4[0] = std::complex<double>(re1, im1);
+      phi_inv_T_4[1] = std::complex<double>(re2, im2);
+      phi_inv_T_4[2] = std::complex<double>(re3, im3);
+      phi_inv_T_4[3] = std::complex<double>(re4, im4);
+
+      // read in the r's
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg %lg %lg %lg %lg",
+          &re1, &im1, &re2, &im2, &re3, &im3, &re4, &im4);
+      if(valuesWritten != 8)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+      r.resize(4);
+      r[0] = std::complex<double>(re1, im1);
+      r[1] = std::complex<double>(re2, im2);
+      r[2] = std::complex<double>(re3, im3);
+      r[3] = std::complex<double>(re4, im4);
+
+      r_real.resize(4);
+      r_real[0] = re1;
+      r_real[1] = re2;
+      r_real[2] = re3;
+      r_real[3] = re4;
+
+      r_imag.resize(4);
+      r_imag[0] = im1;
+      r_imag[1] = im2;
+      r_imag[2] = im3;
+      r_imag[3] = im4;
+
+
+      // read in the amplitude C's
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg %lg %lg %lg %lg %lg %lg %lg %lg %lg %lg %lg %lg",
+          &re1, &im1, &re2, &im2, &re3, &im3, &re4, &im4, &re5, &im5, &re6, &im6, &re7, &im7, &re8, &im8);
+      if((valuesWritten != 8 && valuesWritten != 16)
+          || (pieceConstFlag == (valuesWritten == 8)) )
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+      else if(valuesWritten == 16)
+      {
+        C.resize(8);
+        C[4] = std::complex<double>(re5, im5);
+        C[5] = std::complex<double>(re6, im6);
+        C[6] = std::complex<double>(re7, im7);
+        C[7] = std::complex<double>(re8, im8);
+      }
+      else
+        C.resize(4);
+
+      C[0] = std::complex<double>(re1, im1);
+      C[1] = std::complex<double>(re2, im2);
+      C[2] = std::complex<double>(re3, im3);
+      C[3] = std::complex<double>(re4, im4);
 
       fileClose:
       {
