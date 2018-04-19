@@ -1,0 +1,10 @@
+clear
+clc
+close all
+
+syms kappa x1 x2 nu l1 l2 Ai ai w AiBi;
+
+u1 = -Ai*exp(a_i*x2)*sin(w*x1);
+u2 = AiBi*exp(a_i*x2)*cos(w*x1);
+
+u1_1 = diff(u1, x1);

@@ -1,0 +1,36 @@
+function [gamma] = case4_root_stuff(nu, lambda)
+
+mu = 1;
+lambda1 = 1 - lambda;
+syms x;
+lambda2_eq = (mu + lambda1^2*2*nu*mu/(1 - nu))*x^2 - (2*mu*nu/(1 - nu))*lambda1*x - mu == 0;
+sol = vpasolve(lambda2_eq, x);
+lambda2index = find(sol > 1);
+lambda2 = double(sol(lambda2index));
+
+
+dW_dI = mu/2;
+dW_dII = -mu/(2*lambda1^2*lambda2^2) + (mu*nu/(1- nu))*(1 - 1/lambda1/lambda2);
+d2W_dIdI = 0;
+d2W_dIdII = 0;
+d2W_dIIdII = mu/(2*lambda1^4*lambda2^4) - ...
+    (mu*nu/(2*(1-nu)))*(1/(lambda1^3*lambda2^3));
+
+L1111 = 4*lambda1^2*(d2W_dIdI + 2*lambda2^2*d2W_dIdII + lambda2^4*d2W_dIIdII) + ...
+    2*(dW_dI + lambda2^2*dW_dII);
+L2222 = 4*lambda2^2*(d2W_dIdI + 2*lambda1^2*d2W_dIdII + lambda1^4*d2W_dIIdII) + ...
+    2*(dW_dI + lambda1^2*dW_dII);
+L1122 = 4*lambda1*lambda2*(d2W_dIdI + (lambda1^2 + lambda2^2)*d2W_dIdII + ...
+    lambda1^2*lambda2^2*d2W_dIIdII + dW_dII);
+L2211 = L1122;
+L2121 = 2*dW_dI;
+L1212 = L2121;
+L1221 = -2*lambda1*lambda2*dW_dII;
+L2112 = L1221;
+
+gamma1_term = (L1111*L2222 - L2121^2 + (L2112 + L2211)^2)/L1111;
+gamma0_term = (L2112 + L2211)^2/L1111;
+
+quadraticCoeffs = [1 gamma1_term gamma0_term];
+gamma = roots(quadraticCoeffs);
+end

@@ -1,0 +1,63 @@
+y1System
+ 
+y1System =
+ 
+[ L1212, 2*L1212*m, -(eta1*eta3*L1122^2 + eta1*eta3*L1122*L1212 + L2112*eta1*eta3*L1122 - eta1*eta3*L1212^2 - L2222*L1212*m^2 + L2112*eta1*eta3*L1212 - L1111*L2222*eta1*eta3)/L2222, -(eta1*eta3*m*(L1122^2 + 2*L2112*L1122 - L1212^2 + L2112*L1212 - L1111*L2222))/L2222, -(eta1*eta3*(L1122*L2112*m^2 - L1111*L1212*eta1*eta3))/L2222]
+ 
+y2System
+ 
+y2System =
+ 
+[ L2222, 2*L2222*m, -(eta1*eta3*L1122^2 + eta1*eta3*L1122*L1212 + L2112*eta1*eta3*L1122 - eta1*eta3*L1212^2 - L2222*L1212*m^2 + L2112*eta1*eta3*L1212 - L1111*L2222*eta1*eta3)/L1212, -(eta1*eta3*m*(L1122^2 + 2*L2112*L1122 - L1212^2 + L2112*L1212 - L1111*L2222))/L1212, -(eta1*eta3*(L1122*L2112*m^2 - L1111*L1212*eta1*eta3))/L1212]
+ 
+y1System*h/a
+ 
+ans =
+ 
+[ L2222, 2*L2222*m, -(eta1*eta3*L1122^2 + eta1*eta3*L1122*L1212 + L2112*eta1*eta3*L1122 - eta1*eta3*L1212^2 - L2222*L1212*m^2 + L2112*eta1*eta3*L1212 - L1111*L2222*eta1*eta3)/L1212, -(eta1*eta3*m*(L1122^2 + 2*L2112*L1122 - L1212^2 + L2112*L1212 - L1111*L2222))/L1212, -(eta1*eta3*(L1122*L2112*m^2 - L1111*L1212*eta1*eta3))/L1212]
+ 
+diary off
+cows
+{Undefined function or variable 'cows'.
+} 
+y1System
+ 
+y1System =
+ 
+[ L1212, 2*L1212*m, -(L1122^2*eta1*eta3 - L1212*L2222*m^2 - L1212^2*eta1*eta3 + L1122*L1221*eta1*eta3 + L1122*L2112*eta1*eta3 - L1111*L2222*eta1*eta3 + L1221*L2112*eta1*eta3)/L2222, -(eta1*eta3*m*(L1122^2 + 2*L2112*L1122 - L1212^2 - L1111*L2222 + L1221*L2112))/L2222, -(eta1*eta3*(L1122*L2112*m^2 - L1111*L1212*eta1*eta3))/L2222]
+ 
+y2System
+ 
+y2System =
+ 
+[ L2222, 2*L2222*m, -(L1122^2*eta1*eta3 - L1212*L2222*m^2 - L1212^2*eta1*eta3 + L1122*L1221*eta1*eta3 + L1122*L2112*eta1*eta3 - L1111*L2222*eta1*eta3 + L1221*L2112*eta1*eta3)/L1212, -(eta1*eta3*m*(L1122^2 + 2*L2112*L1122 - L1212^2 - L1111*L2222 + L1221*L2112))/L1212, -(eta1*eta3*(L1122*L2112*m^2 - L1111*L1212*eta1*eta3))/L1212]
+ 
+y1System*h/a
+ 
+ans =
+ 
+[ L2222, 2*L2222*m, -(L1122^2*eta1*eta3 - L1212*L2222*m^2 - L1212^2*eta1*eta3 + L1122*L1221*eta1*eta3 + L1122*L2112*eta1*eta3 - L1111*L2222*eta1*eta3 + L1221*L2112*eta1*eta3)/L1212, -(eta1*eta3*m*(L1122^2 + 2*L2112*L1122 - L1212^2 - L1111*L2222 + L1221*L2112))/L1212, -(eta1*eta3*(L1122*L2112*m^2 - L1111*L1212*eta1*eta3))/L1212]
+ 
+diary off
+cows
+{Undefined function or variable 'cows'.
+} 
+y1System
+ 
+y1System =
+ 
+[ L1212, 2*L1212*m, (- eta1*eta3*L1122^2 - 2*eta1*eta3*L1122*L2112 + eta1*eta3*L1212^2 + L2222*L1212*m^2 - eta1*eta3*L2112^2 + L1111*L2222*eta1*eta3)/L2222, -(eta1*eta3*m*(L1122^2 + 2*L1122*L2112 - L1212^2 + L2112^2 - L1111*L2222))/L2222, -(eta1*eta3*(L1122*L2112*m^2 - L1111*L1212*eta1*eta3))/L2222]
+ 
+y2System
+ 
+y2System =
+ 
+[ L2222, 2*L2222*m, (- eta1*eta3*L1122^2 - 2*eta1*eta3*L1122*L2112 + eta1*eta3*L1212^2 + L2222*L1212*m^2 - eta1*eta3*L2112^2 + L1111*L2222*eta1*eta3)/L1212, -(eta1*eta3*m*(L1122^2 + 2*L1122*L2112 - L1212^2 + L2112^2 - L1111*L2222))/L1212, -(eta1*eta3*(L1122*L2112*m^2 - L1111*L1212*eta1*eta3))/L1212]
+ 
+y1System*h/a
+ 
+ans =
+ 
+[ L2222, 2*L2222*m, (- eta1*eta3*L1122^2 - 2*eta1*eta3*L1122*L2112 + eta1*eta3*L1212^2 + L2222*L1212*m^2 - eta1*eta3*L2112^2 + L1111*L2222*eta1*eta3)/L1212, -(eta1*eta3*m*(L1122^2 + 2*L1122*L2112 - L1212^2 + L2112^2 - L1111*L2222))/L1212, -(eta1*eta3*(L1122*L2112*m^2 - L1111*L1212*eta1*eta3))/L1212]
+ 
+diary off

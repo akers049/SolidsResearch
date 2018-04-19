@@ -1,0 +1,42 @@
+variable	x index 1
+variable	y index 1
+variable	z index 1
+
+variable	xx equal 20*$x+0.6
+variable	xx1 equal 20*$x+0.75
+variable	yy equal 20*$y+0.6
+variable	yy1 equal 20*$y+0.75
+variable	zz equal 20*$z+0.6
+variable	zz1 equal 20*$z+0.75
+
+units		metal
+atom_style	atomic
+
+lattice		bcc 3.329473762894045
+region      bigBox block -0.25 ${xx1} -0.25 ${yy1} -0.25 ${zz1}
+region		box block 0 ${xx} 0 ${yy} 0 ${zz}
+
+boundary p p p
+
+create_box 2 bigBox
+create_atoms	2 region box basis 1 1 basis 2 2 
+
+mass		1 196.6657
+mass		2 112.411
+
+pair_style	kim LAMMPSvirial MorseEIP_GuthikondaElliott_2011_AuCd__MO_703849496106_000
+pair_coeff * * Au Cd
+
+neighbor        0.5666 bin
+neigh_modify	delay 0 every 10 check no
+
+fix		1 all nve
+
+variable tempEnd equal 550
+
+fix     3 all adapt 0 pair kim PARAM_FREE_temperature * * v_tempEnd
+
+dump 		1 all cfg 50 ../../visualization/thermal_expansion_checking/AuCd_thermal_expansion_0/dump.comp_*.cfg mass type xs ys zs id
+dump_modify     1 element Au Cd
+
+run 1

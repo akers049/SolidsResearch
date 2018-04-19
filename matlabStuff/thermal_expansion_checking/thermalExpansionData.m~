@@ -1,0 +1,57 @@
+clear
+clc
+
+%% Thermal Expansion Data
+
+K = 99.4973e9;  % the fitted value from the paper
+
+rawPressures = [-4608.6607 ;
+		-3735.1561 ;
+		-2838.2383;
+		-1917.2173;
+		-971.3821 ;
+                8.030212e-07 ;
+                997.68383;
+                2022.447 ;
+                3075.0904;
+                4156.4389 ;
+                5267.3418 ;
+                6408.6737;
+                7581.3348 ;
+                8786.2516 ;
+                10024.378 ;
+                11296.694 ]*1e5;
+% rawPressures = [ -2.2364256e-07;
+% 	              255.63224;
+% 	         	  514.81027;
+% 	         	  777.58352;
+% 	         	  1044.0021;
+% 	         	  1314.1166;
+% 	         	  1587.9783;
+% 	         	  1865.6384;
+% 	         	  2147.1489;
+% 	         	  2432.5615;
+% 	         	  2721.9279]*1e5;  % in Pascals
+deltaT = [0:10:100]';
+deltaP = rawPressures - rawPressures(1);
+deltaP_by_3K = deltaP/(3*K);
+
+lin_alpha = lsqnonneg(deltaT(1:5), deltaP_by_3K(1:5));
+
+% visualize data
+figure(1)
+
+t = 0:0.01:100;
+y = lin_alpha*t;
+plot(t, y, 'k', 'Linewidth', 2);
+hold on
+plot(deltaT, deltaP_by_3K, 'ro', 'MarkerSize', 7, 'MarkerFaceColor', 'r');
+grid on
+
+xlabel('\DeltaT (K)');
+ylab = ylabel('$\frac{\Delta P}{3\mathcal{K}}$');
+set(ylab,'Interpreter','latex','FontSize', 18);
+
+leg = legend('Linear fit with \alpha = 36.741e-06 K^{-1}', 'Values from simulation', 'Location', 'NorthWest') ;
+set(leg, 'FontSize', 12);
+title('\DeltaP vs \DeltaT for simulated and linear fit');

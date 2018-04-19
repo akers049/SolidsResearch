@@ -1,0 +1,8 @@
+* Info (KIM_API_model::is_it_match): The following descriptor file line may not match with simulator_name's descriptor file.
+Neigh_IterAccess flag none [] 
+
+* Info (KIM_API_model::is_it_match): The following descriptor file line may not match with MorseEIP_GuthikondaElliott_2011_AuCd__MO_703849496106_000's descriptor file.
+Neigh_BothAccess flag none [] 
+
+* Info: (KIM_API_model::model_init): call dynamically linked initialize routine for:MorseEIP_GuthikondaElliott_2011_AuCd__MO_703849496106_000
+               from the shared library:/home/andrew/kim-api-v1.7.2/openkim-repository/models//MorseEIP_GuthikondaElliott_2011_AuCd__MO_703849496106_000/libkim-api-model-v1.so

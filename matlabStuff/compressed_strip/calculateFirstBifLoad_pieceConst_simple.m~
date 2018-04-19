@@ -1,0 +1,47 @@
+function [criticalLoad, criticalFreq] = calculateFirstBifLoad_pieceConst_simple(L1, kappa, starting_wavelength, initGuess)
+
+kappa_eval = kappa;
+stepSize = 0.001;
+wavelength_vector = starting_wavelength:stepSize:60;
+solutionVector = zeros(size(wavelength_vector));
+
+% get initial guess
+xx = 0.1:0.01:0.95;
+yy = zeros(size(xx));
+for i = 1:size(xx)
+    yy(i) = piece_const_mu_evaluate_determinant_M(L1, kappa_eval, wavelength_vector(i), xx(i));
+end
+figure(1);
+plot(xx, yy, 'LineWidth', 1.3);
+% axis([0.5 0.95 -1 1]);
+grid on;
+[guess_x, ~] = ginput(1);
+close all;
+
+
+initialGuess = guess_x;
+for i = 1:length(wavelength_vector)
+    funHandle = @(x) piece_const_mu_evaluate_determinant_M(L1, kappa_eval, wavelength_vector(i), x);
+
+    solutionVector(i) = fzero(funHandle, [initialGuess - 0.1, initialGuess + 0.1]);
+    
+    initialGuess = solutionVector(i);
+    if(solutionVector(i) > 0.8)
+        break;
+    end
+    
+end
+solutionVector = solutionVector(1:i);
+wavelength_vector = wavelength_vector(1:i);
+
+plot(wavelength_vector, solutionVector, 'LineWidth', 1.3)
+grid on
+ylabel('\lambda_{c}      ', 'rot', 1)
+xlabel('Wavelength', 'fontweight', 'bold', 'fontsize', 13)
+title('Ciritcal Load for Compressed Strip')
+
+criticalLoad = min(solutionVector);
+criticalWavelength =  wavelength_vector(find(min(solutionVector) == solutionVector));
+criticalFreq = 2*pi/criticalWavelength;
+
+end
