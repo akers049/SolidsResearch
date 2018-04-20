@@ -5,7 +5,7 @@
  *      Author: Andrew Akerson
  */
 
-#include "CompressedStripPacaBloch.h"
+#include "CompressedStrip_asymptotics.h"
 
 
 using namespace dealii;
@@ -33,8 +33,13 @@ int main ()
             << std::endl << std::endl;
 
 
-  // get the critical lambda value
-  ep.evaluation_point = ep.present_solution;
+  ep.assemble_asymptotic_integrals();
+
+  double bif_val_1 = -0.5*ep.E_u1u1u1/(ep.dEdlambda_u1u1);
+  double bif_val_2 = -(1.0/3.0)*(ep.E_u1u1u1u1 + 3.0*ep.E_u2u1u1)/(ep.dEdlambda_u1u1);
+
+  std::cout << "\n\n LAMBDA_1 : " << bif_val_1 << std::endl;
+  std::cout << " LAMBDA_2 : " <<  bif_val_2 << std::endl;
 
   return(0);
 }

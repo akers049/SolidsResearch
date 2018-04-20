@@ -154,12 +154,6 @@ namespace compressed_strip
 
     void update_F0(const double lambda);
 
-    void output_results(const unsigned int cycle) const;
-    void output_load_info(std::vector<double> lambda_values,
-                         std::vector<double> energy_values,
-                         std::vector<double> congugate_lambda_values,
-                         std::vector<double> displacement_magnitude,
-                         const unsigned int cycle)  const;
     void read_input_file(char* filename);
 
     // get methods for important constants
@@ -177,6 +171,7 @@ namespace compressed_strip
 
 
     double               system_energy = 0.0;
+    double               E_u1u1u1 = 0.0;
     double               E_u1u1u1u1 = 0.0;
     double               E_u2u1u1 = 0.0;
     double               dEdlambda_u1u1 = 0.0;
@@ -188,35 +183,35 @@ namespace compressed_strip
 
   private:
 
-    void get_grad_u1_value_list(const std::vector< Point< DIM > > &  points, std::vector<Tensor<2, DIM>> value_list);
+    void get_grad_u1_value_list(const std::vector< Point< DIM > > &  points, std::vector<Tensor<2, DIM>> & value_list);
 
 
-    void get_grad_u2_value_list(const std::vector< Point< DIM > > &  points, std::vector<Tensor<2, DIM>> value_list);
+    void get_grad_u2_value_list(const std::vector< Point< DIM > > &  points, std::vector<Tensor<2, DIM>> & value_list);
 
     double E1(double x2);
     double E2(double x2);
     double E2_tilde(double x2);
 
-    double E1exp_real(double x2, void *params)
+    double E1exp_real(double x2)
     {
-      unsigned int i = *(unsigned int *) params;
+      unsigned int i = root_index;
       return( exp(-r_real[i]*x2)*cos(-r_imag[i]*x2)*E1(x2));
     };
 
-    double E1exp_imag(double x2, void *params)
+    double E1exp_imag(double x2)
     {
-      unsigned int i = *(unsigned int *) params;
+      unsigned int i = root_index;
       return( exp(-r_real[i]*x2)*sin(-r_imag[i]*x2)*E1(x2));
     };
 
-    double E2exp_real(double x2, void *params)
+    double E2exp_real(double x2)
     {
-      unsigned int i = *(unsigned int *) params;
+      unsigned int i = root_index;
       return( exp(-r_real[i]*x2)*cos(-r_imag[i]*x2)*E2(x2));
     };
-    double E2exp_imag(double x2, void *params)
+    double E2exp_imag(double x2)
     {
-      unsigned int i = *(unsigned int *) params;
+      unsigned int i = root_index;
       return( exp(-r_real[i]*x2)*sin(-r_imag[i]*x2)*E2(x2));
     };
     double L(unsigned int i, unsigned int j, unsigned int k, unsigned int l)
@@ -270,8 +265,8 @@ namespace compressed_strip
     std::vector<double> r_real;
     std::vector<double> r_imag;
 
-    std::vector<double> phi1;
-    std::vector<double> phi3;
+    std::vector<std::complex<double>> phi1;
+    std::vector<std::complex<double>> phi3;
     std::vector<std::complex<double>> C;
     std::vector<std::complex<double>> phi_inv_T_2;
     std::vector<std::complex<double>> phi_inv_T_4;
@@ -288,6 +283,9 @@ namespace compressed_strip
 
     NuFunction nu;
     MuFunction *mu = NULL;
+
+
+    unsigned int root_index = 0;
 
     // numerical integration stuff:
     unsigned long int np = 1000; // work area size

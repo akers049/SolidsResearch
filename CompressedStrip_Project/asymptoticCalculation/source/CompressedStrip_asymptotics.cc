@@ -12,8 +12,7 @@
 
 #ifndef COMPRESSEDSTRIPPACABLOCH_CC_
 #define COMPRESSEDSTRIPPACABLOCH_CC_
-#include "CompressedStripPacaBloch.h"
-
+#include <CompressedStrip_asymptotics.h>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -45,7 +44,7 @@ namespace compressed_strip
     private:
     const F& _func;
     static double invoke(double x, void *params) {
-      return static_cast<gsl_function_pp*>(params)->_func(x, params);
+      return static_cast<gsl_function_pp*>(params)->_func(x);
     }
   };
 
@@ -186,14 +185,14 @@ namespace compressed_strip
           for (unsigned int v=0;
                v < GeometryInfo<2>::vertices_per_cell;
                ++v)
+          {
+            const double x2_pos = (cell->vertex(v))(1);
+            if ( x2_pos > section_x2)
             {
-              const double x2_pos = (cell->vertex(v))(1);
-              if ( x2_pos > section_x2)
-                {
-                  cell->set_refine_flag ();
-                  break;
-                }
+              cell->set_refine_flag ();
+              break;
             }
+          }
         }
         triangulation.execute_coarsening_and_refinement ();
       }
@@ -213,7 +212,6 @@ namespace compressed_strip
     // Also, only distribute the dofs if it hasn't been done so already.
     if (fileLoadFlag == false)
     {
-
       dof_handler.distribute_dofs (fe);
       present_solution.reinit (dof_handler.n_dofs());
     }
@@ -223,13 +221,14 @@ namespace compressed_strip
   }
 
 
-  void ElasticProblem::get_grad_u1_value_list(const std::vector< Point< DIM > > &  points, std::vector<Tensor<2, DIM>> value_list)
+  void ElasticProblem::get_grad_u1_value_list(const std::vector< Point< DIM > > &  points, std::vector<Tensor<2, DIM>> & value_list)
   {
 
-    Tensor<2, DIM> tmp;
-    Tensor<2, DIM, std::complex<double>> tmp_complex;
     for (unsigned int point_n = 0; point_n < points.size(); ++point_n)
     {
+      Tensor<2, DIM> tmp;
+      Tensor<2, DIM, std::complex<double>> tmp_complex;
+
       double x1 = points[point_n](0);
       double x2 = points[point_n](1);
 
@@ -250,20 +249,21 @@ namespace compressed_strip
 
       tmp[0][0] = -critical_frequency*cos(critical_frequency*x1)*(tmp_complex[0][0]).real();
       tmp[0][1] = -sin(critical_frequency*x1)*(tmp_complex[0][1]).real();
-      tmp[0][0] = -critical_frequency*sin(critical_frequency*x1)*(tmp_complex[1][0]).real();
-      tmp[0][1] = cos(critical_frequency*x1)*(tmp_complex[1][1]).real();
+      tmp[1][0] = -critical_frequency*sin(critical_frequency*x1)*(tmp_complex[1][0]).real();
+      tmp[1][1] = cos(critical_frequency*x1)*(tmp_complex[1][1]).real();
 
       value_list[point_n] = tmp;
     }
   }
 
-  void ElasticProblem::get_grad_u2_value_list(const std::vector< Point< DIM > > &  points, std::vector<Tensor<2, DIM>> value_list)
+  void ElasticProblem::get_grad_u2_value_list(const std::vector< Point< DIM > > &  points, std::vector<Tensor<2, DIM>> & value_list)
   {
-    Tensor<2, DIM> tmp;
-    Tensor<2, DIM, std::complex<double>> tmp_complex;
+
 
     for (unsigned int point_n = 0; point_n < points.size(); ++point_n)
     {
+      Tensor<2, DIM> tmp;
+      Tensor<2, DIM, std::complex<double>> tmp_complex;
       double x1 = points[point_n](0);
       double x2 = points[point_n](1);
 
@@ -297,10 +297,10 @@ namespace compressed_strip
       double error; // the error estimate
 
       ElasticProblem* ptr_1 = this;
-      auto ptr1 = [=](double x, void *params)->double{return ptr_1->E1exp_real(x, params);};
-      auto ptr2 = [=](double x, void *params)->double{return ptr_1->E2exp_real(x, params);};
-      auto ptr3 = [=](double x, void *params)->double{return ptr_1->E1exp_imag(x, params);};
-      auto ptr4 = [=](double x, void *params)->double{return ptr_1->E2exp_imag(x, params);};
+      auto ptr1 = [=](double x)->double{return ptr_1->E1exp_real(x);};
+      auto ptr2 = [=](double x)->double{return ptr_1->E2exp_real(x);};
+      auto ptr3 = [=](double x)->double{return ptr_1->E1exp_imag(x);};
+      auto ptr4 = [=](double x)->double{return ptr_1->E2exp_imag(x);};
 
       gsl_function_pp<decltype(ptr1)> Fp1(ptr1);
       gsl_function_pp<decltype(ptr2)> Fp2(ptr2);
@@ -315,21 +315,21 @@ namespace compressed_strip
 //      gsl_function F1 = &this->E1exp;
 //      gsl_function F2 = &this->E2exp;
 
+
       for(unsigned int i = 0; i < 4; i++)
       {
-        F1->params = &i;
-        F2->params = &i;
-        F3->params = &i;
-        F4->params = &i;
+
+        root_index = i;
 
         gsl_integration_qag (F1, a, x2, abserr, relerr, np,
             GSL_INTEG_GAUSS15, w, &(E1_exp_integral_real[i]), &error);
         gsl_integration_qag (F2, a, x2, abserr, relerr, np,
             GSL_INTEG_GAUSS15, w, &(E2_exp_integral_real[i]), &error);
-        gsl_integration_qag (F1, a, x2, abserr, relerr, np,
+        gsl_integration_qag (F3, a, x2, abserr, relerr, np,
             GSL_INTEG_GAUSS15, w, &(E1_exp_integral_imag[i]), &error);
-        gsl_integration_qag (F2, a, x2, abserr, relerr, np,
+        gsl_integration_qag (F4, a, x2, abserr, relerr, np,
             GSL_INTEG_GAUSS15, w, &(E2_exp_integral_imag[i]), &error);
+
 
         E1_exp_integral_real[i] *= (-1.0/L(1,2,1,2));
         E2_exp_integral_real[i] *= (-1.0/L(2,2,2,2));
@@ -358,12 +358,12 @@ namespace compressed_strip
       }
 
 
-      tmp[1][1] += E2_tilde(x2);
+      tmp[1][1] += -(1.0/L(2,2,2,2))*E2_tilde(x2);
 
       tmp[0][0] = 2*w_c*cos(2*w_c*x1)*(tmp_complex[0][0]).real();
       tmp[0][1] = sin(2*w_c*x1)*(tmp_complex[0][1]).real();
-      tmp[0][0] = -2*w_c*sin(2*w_c*x1)*(tmp_complex[1][0]).real();
-      tmp[0][1] = cos(2*w_c*x1)*(tmp_complex[1][1]).real();
+      tmp[1][0] = -2*w_c*sin(2*w_c*x1)*(tmp_complex[1][0]).real();
+      tmp[1][1] = cos(2*w_c*x1)*(tmp_complex[1][1]).real();
 
       value_list[point_n] = tmp;
     }
@@ -663,6 +663,7 @@ namespace compressed_strip
         Tensor<6,DIM> d3W_dF = nh.get_d3W_dFdFdF(nu_values[q_point], mu_values[q_point], F_inv, II_F);
         Tensor<8,DIM> d4W_dF = nh.get_d4W_dFdFdFdF(nu_values[q_point], mu_values[q_point], F_inv, II_F);
 
+        double contrib_E_u1u1u1 = 0.0;
         double contrib_E_u1u1u1u1 = 0.0;
         double contrib_E_u2u1u1 = 0.0;
         double contrib_dEdlambda_u1u1 = 0.0;
@@ -675,6 +676,9 @@ namespace compressed_strip
                   {
                     contrib_E_u2u1u1 +=
                         d3W_dF[i][j][k][l][m][n]*(grad_u2[q_point])[i][j]*(grad_u1[q_point])[l][k]*(grad_u1[q_point])[m][n];
+
+                    contrib_E_u1u1u1 +=
+                        d3W_dF[i][j][k][l][m][n]*(grad_u1[q_point])[i][j]*(grad_u1[q_point])[l][k]*(grad_u1[q_point])[m][n];
 
                     contrib_dEdlambda_u1u1 +=
                         d3W_dF[i][j][k][l][m][n]*dF_dlambda[i][j]*(grad_u2[q_point])[l][k]*(grad_u2[q_point])[m][n];
@@ -692,173 +696,11 @@ namespace compressed_strip
         E_u1u1u1u1 += contrib_E_u1u1u1u1*fe_values.JxW(q_point);
         E_u2u1u1 += contrib_E_u2u1u1*fe_values.JxW(q_point);
         dEdlambda_u1u1 += contrib_dEdlambda_u1u1*fe_values.JxW(q_point);
+
+        E_u1u1u1 += contrib_E_u1u1u1*fe_values.JxW(q_point);
       }
     }
 
-  }
-
-  void ElasticProblem::output_results (const unsigned int cycle) const
-  {
-
-    std::vector<std::string> solution_names;
-    switch (DIM)
-      {
-      case 1:
-        solution_names.push_back ("displacement");
-        break;
-      case 2:
-        solution_names.push_back ("x1_displacement");
-        solution_names.push_back ("x2_displacement");
-        break;
-      case 3:
-        solution_names.push_back ("x1_displacement");
-        solution_names.push_back ("x2_displacement");
-        solution_names.push_back ("x3_displacement");
-        break;
-      default:
-        Assert (false, ExcNotImplemented());
-        break;
-      }
-
-    // output the total displacements. this requires adding in the uniform solution on top of the displacements
-
-    std::string filename0(output_directory);
-    filename0 += "/total_displacement";
-
-    // see if the directory exists...
-    struct stat st;
-    if (stat(filename0.c_str(), &st) == -1)
-      mkdir(filename0.c_str(), 0700);
-
-    filename0 += "/total_displacement-";
-    filename0 += std::to_string(cycle);
-
-    filename0 += ".vtk";
-    std::ofstream output_totalDisp (filename0.c_str());
-
-    DataOut<DIM> data_out_totalDisp;
-
-    data_out_totalDisp.attach_dof_handler (dof_handler);
-
-
-    // Get the total displacement of each of the points.
-    // Get the points of the dofs so we can do some shifting...
-    std::vector<Point<DIM>> support_points(dof_handler.n_dofs());
-    MappingQ1<DIM> mapping;
-    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
-
-    const unsigned int   number_dofs = dof_handler.n_dofs();
-
-    Vector<double> shifted_solution(number_dofs);
-
-    std::vector<bool> x1_components = {true, false};
-    ComponentMask x1_mask(x1_components);
-
-    std::vector<bool> is_x1_comp(number_dofs, false);
-
-    DoFTools::extract_dofs(dof_handler, x1_mask, is_x1_comp);
-
-    for (unsigned int i = 0; i < number_dofs; i++)
-    {
-      if(is_x1_comp[i])
-      {
-        // it is an x1 component
-        shifted_solution[i] = present_solution[i] + support_points[i](0)*(F0[0][0] - 1.0);
-      }
-      else
-      {
-        // it is an x2 component
-        shifted_solution[i] = present_solution[i] + support_points[i](1)*(F0[1][1] - 1.0);
-      }
-    }
-
-    data_out_totalDisp.add_data_vector (shifted_solution, solution_names);
-    data_out_totalDisp.build_patches ();
-    data_out_totalDisp.write_vtk (output_totalDisp);
-
-
-    // Now output the displacements from uniform solution
-
-    std::string filename1(output_directory);
-    filename1 += "/displacement_from_uniform";
-
-    // see if the directory exists...
-    if (stat(filename1.c_str(), &st) == -1)
-      mkdir(filename1.c_str(), 0700);
-
-    filename1 += "/displacement_from_uniform-";
-    filename1 += std::to_string(cycle);
-    filename1 += ".vtk";
-    std::ofstream output_disp_from_uniform (filename1.c_str());
-
-    DataOut<DIM> data_out_disp_from_uniform;
-
-    data_out_disp_from_uniform.attach_dof_handler (dof_handler);
-
-    data_out_disp_from_uniform.add_data_vector (present_solution, solution_names);
-    data_out_disp_from_uniform.build_patches ();
-    data_out_disp_from_uniform.write_vtk (output_disp_from_uniform);
-
-    // Now output the deformed mesh
-
-    // just need to shift the corrdinates of the verticies by the shifted solution vector
-
-    DataOut<DIM> deformed_data_out;
-
-    deformed_data_out.attach_dof_handler(dof_handler);
-    deformed_data_out.add_data_vector(shifted_solution, solution_names);
-
-    MappingQEulerian<DIM> q_mapping(1,  dof_handler, shifted_solution);
-    deformed_data_out.build_patches(q_mapping, 1);
-
-    std::string filename2(output_directory);
-    filename2 += "/deformed_mesh";
-    // see if the directory exists...
-    if (stat(filename2.c_str(), &st) == -1)
-      mkdir(filename2.c_str(), 0700);
-    filename2 += "/deformed_mesh-";
-    filename2 += std::to_string(cycle);
-    filename2 += ".vtk";
-    std::ofstream output_deformed_mesh(filename2.c_str());
-    deformed_data_out.write_vtk(output_deformed_mesh);
-
-
-  }
-
-  void ElasticProblem::output_load_info(std::vector<double> lambda_values,
-                                             std::vector<double> energy_values,
-                                             std::vector<double> congugate_lambda_values,
-                                             std::vector<double> displacement_magnitude,
-                                             const unsigned int cycle) const
-  {
-
-    // output the lambda value, system energy, and the congugate lambda vales for each step
-
-    std::string filename(output_directory);
-    filename += "/load_info";
-    // see if the directory exists...
-    struct stat st;
-    if (stat(filename.c_str(), &st) == -1)
-      mkdir(filename.c_str(), 0700);
-
-    filename += "/load_info";
-    filename += std::to_string(cycle);
-    filename += ".txt";
-    std::ofstream load_data_output;
-    load_data_output.open(filename.c_str());
-    load_data_output << "# lambda";
-    load_data_output << std::setw(25) << "energy" ;
-    load_data_output << std::setw(25) << "congugate_lambda" << std::endl;
-    load_data_output << std::endl;
-    for(unsigned int i = 0; i < lambda_values.size(); i ++)
-    {
-      load_data_output << std::setprecision(15) << std::setw(8) << lambda_values[i];
-      load_data_output << std::setprecision(15) << std::setw(25) << energy_values[i];
-      load_data_output << std::setprecision(15) << std::setw(25) << congugate_lambda_values[i];
-      load_data_output << std::setprecision(15) << std::setw(25) << displacement_magnitude[i] << std::endl;
-    }
-
-    load_data_output.close();
   }
 
   void ElasticProblem::read_input_file(char* filename)
@@ -942,6 +784,7 @@ namespace compressed_strip
       }
       else if (valuesWritten == 2)
       {
+        L1 = l1;
         pieceConstFlag = true;
         mu = new MuFunction(kappa, l1);
       }
@@ -970,6 +813,7 @@ namespace compressed_strip
         fileReadErrorFlag = true;
         goto fileClose;
       }
+      w_c = critical_frequency;
 
 
       double re1, re2, im1, im2, re3, re4, im3, im4;
@@ -1032,35 +876,35 @@ namespace compressed_strip
       B[2] = std::complex<double>(re3, im3);
       B[3] = std::complex<double>(re4, im4);
 
-      // read in the phi1's
+      // read in the phi1
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg",
-          &re1, &re2, &re3, &re4);
-      if(valuesWritten != 4)
+      valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg %lg %lg %lg %lg",
+          &re1, &im1, &re2, &im2, &re3, &im3, &re4, &im4);
+      if(valuesWritten != 8)
       {
         fileReadErrorFlag = true;
         goto fileClose;
       }
       phi1.resize(4);
-      phi1[0] = re1;
-      phi1[1] = re2;
-      phi1[2] = re3;
-      phi1[3] = re4;
+      phi1[0] = std::complex<double>(re1, im1);
+      phi1[1] = std::complex<double>(re2, im2);
+      phi1[2] = std::complex<double>(re3, im3);
+      phi1[3] = std::complex<double>(re4, im4);
 
-      // read in the phi3's
+      // read in the phi3
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg",
-          &re1, &re2, &re3, &re4);
-      if(valuesWritten != 4)
+      valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg %lg %lg %lg %lg",
+          &re1, &im1, &re2, &im2, &re3, &im3, &re4, &im4);
+      if(valuesWritten != 8)
       {
         fileReadErrorFlag = true;
         goto fileClose;
       }
       phi3.resize(4);
-      phi3[0] = re1;
-      phi3[1] = re2;
-      phi3[2] = re3;
-      phi3[3] = re4;
+      phi3[0] = std::complex<double>(re1, im1);
+      phi3[1] = std::complex<double>(re2, im2);
+      phi3[2] = std::complex<double>(re3, im3);
+      phi3[3] = std::complex<double>(re4, im4);
 
       // read in the phi_inv_T_2
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
@@ -1071,6 +915,7 @@ namespace compressed_strip
         fileReadErrorFlag = true;
         goto fileClose;
       }
+      phi_inv_T_2.resize(4);
       phi_inv_T_2[0] = std::complex<double>(re1, im1);
       phi_inv_T_2[1] = std::complex<double>(re2, im2);
       phi_inv_T_2[2] = std::complex<double>(re3, im3);
@@ -1085,6 +930,7 @@ namespace compressed_strip
         fileReadErrorFlag = true;
         goto fileClose;
       }
+      phi_inv_T_4.resize(4);
       phi_inv_T_4[0] = std::complex<double>(re1, im1);
       phi_inv_T_4[1] = std::complex<double>(re2, im2);
       phi_inv_T_4[2] = std::complex<double>(re3, im3);
@@ -1162,6 +1008,14 @@ namespace compressed_strip
     // set the domain dimensions
     domain_dimensions[0] = number_unit_cells*2.0*(4.0*atan(1.0))/critical_frequency;
     domain_dimensions[1] = 1.0;
+
+    // set our constants and stuff
+    set_present_lambda(critical_lambda_analytical);
+    Tensor<2, DIM> F_inv = invert(F0);
+    double II_F = determinant(F0);
+    L_tensor = nh.get_incremental_moduli_tensor(NU_VALUE, 1.0, F_inv, II_F);
+    M_tensor = nh.get_d3W_dFdFdF(NU_VALUE, 1.0, F_inv, II_F);
+
 
     // make the output directory
     struct stat st;
