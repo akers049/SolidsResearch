@@ -312,10 +312,6 @@ namespace compressed_strip
       gsl_function *F3 = static_cast<gsl_function*>(&Fp3);
       gsl_function *F4 = static_cast<gsl_function*>(&Fp4);
 
-//      gsl_function F1 = &this->E1exp;
-//      gsl_function F2 = &this->E2exp;
-
-
       for(unsigned int i = 0; i < 4; i++)
       {
 
@@ -349,7 +345,7 @@ namespace compressed_strip
         exp_integral_eh[i] = std::exp(r[i]*x2)*
                              (phi_inv_T_2[i]*E1_exp_integral[i] + phi_inv_T_4[i]*E2_exp_integral[i]);
 
-        h[i] = -(1.0/L(1,2,1,2))*phi_inv_T_2[i]*E1(x1) - (1.0/L(2,2,2,2))*phi_inv_T_4[i]*E2(x2);
+        h[i] = -(1.0/L(1,2,1,2))*phi_inv_T_2[i]*E1(x2) - (1.0/L(2,2,2,2))*phi_inv_T_4[i]*E2(x2);
 
         tmp_complex[0][0] += phi1[i]*exp_integral_eh[i];
         tmp_complex[0][1] += phi1[i]*(r[i]*exp_integral_eh[i] + h[i]);
@@ -358,7 +354,7 @@ namespace compressed_strip
       }
 
 
-      tmp[1][1] += -(1.0/L(2,2,2,2))*E2_tilde(x2);
+      tmp_complex[1][1] += -(1.0/L(2,2,2,2))*E2_tilde(x2);
 
       tmp[0][0] = 2*w_c*cos(2*w_c*x1)*(tmp_complex[0][0]).real();
       tmp[0][1] = sin(2*w_c*x1)*(tmp_complex[0][1]).real();
@@ -444,7 +440,7 @@ namespace compressed_strip
     double w_c_2 = w_c*w_c;
     double w_c_3 = w_c*w_c_2;
 
-    double out = 2*(M(2,1,1,1,1,2)*(w_c_2)*v1*v1_1 + M(2,1,1,1,2,1)*(w_c_3)*v1*v2 - M(2,1,2,2,2,1)*(w_c_2)*v2*v2_1 -
+    double out = 2.0*(M(2,1,1,1,1,2)*(w_c_2)*v1*v1_1 + M(2,1,1,1,2,1)*(w_c_3)*v1*v2 - M(2,1,2,2,2,1)*(w_c_2)*v2*v2_1 -
                     M(2,1,2,2,1,2)*w_c*v1_1*v2_1) +
                    M(2,2,2,2,2,2)*v2_1*v2_11 - M(2,2,1,1,2,2)*w_c*(v1_1*v2_1 + v1*v2_11) +
                    M(2,2,1,1,1,1)*(w_c_2)*v1*v1_1 - M(2,2,1,2,1,2)*v1_1*v1_11 - M(2,2,2,1,2,1)*(w_c_2)*v2*v2_1 -
@@ -596,6 +592,7 @@ namespace compressed_strip
     E_u1u1u1u1 = 0.0;
     E_u2u1u1 = 0.0;
     dEdlambda_u1u1 = 0.0;
+    E_u1u1u1 = 0.0;
 
     QGauss<DIM>  quadrature_formula(4);
 
@@ -675,19 +672,19 @@ namespace compressed_strip
                   for (unsigned int n=0; n<DIM; ++n)
                   {
                     contrib_E_u2u1u1 +=
-                        d3W_dF[i][j][k][l][m][n]*(grad_u2[q_point])[i][j]*(grad_u1[q_point])[l][k]*(grad_u1[q_point])[m][n];
+                        d3W_dF[i][j][k][l][m][n]*(grad_u2[q_point])[i][j]*(grad_u1[q_point])[k][l]*(grad_u1[q_point])[m][n];
 
                     contrib_E_u1u1u1 +=
-                        d3W_dF[i][j][k][l][m][n]*(grad_u1[q_point])[i][j]*(grad_u1[q_point])[l][k]*(grad_u1[q_point])[m][n];
+                        d3W_dF[i][j][k][l][m][n]*(grad_u1[q_point])[i][j]*(grad_u1[q_point])[k][l]*(grad_u1[q_point])[m][n];
 
                     contrib_dEdlambda_u1u1 +=
-                        d3W_dF[i][j][k][l][m][n]*dF_dlambda[i][j]*(grad_u2[q_point])[l][k]*(grad_u2[q_point])[m][n];
+                        d3W_dF[i][j][k][l][m][n]*dF_dlambda[i][j]*(grad_u1[q_point])[k][l]*(grad_u1[q_point])[m][n];
                     for (unsigned int p=0; p<DIM; ++p)
                       for (unsigned int q=0; q<DIM; ++q)
                       {
                         contrib_E_u1u1u1u1 +=
                             d4W_dF[i][j][k][l][m][n][p][q]*
-                               (grad_u1[q_point])[i][j]*(grad_u1[q_point])[l][k]*
+                               (grad_u1[q_point])[i][j]*(grad_u1[q_point])[k][l]*
                                (grad_u1[q_point])[m][n]*(grad_u1[q_point])[p][q];
 
                       }
