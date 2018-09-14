@@ -20,6 +20,8 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/time.h>
+
 
 
 
@@ -48,8 +50,6 @@ namespace compressed_strip
 
     // Put your function for nu. p(0) is x1 value, p(1) is the x2 value
 
-    double nuValue = NU_VALUE;
-
     return nuValue;
   }
 
@@ -61,7 +61,6 @@ namespace compressed_strip
       values[i] = NuFunction::value(points[i], component);
 
   }
-
 
   double MuFunction::value (const Point<DIM>  &p,
                                  const unsigned int  component) const
@@ -130,7 +129,7 @@ namespace compressed_strip
   ElasticProblem::ElasticProblem ()
     :
     dof_handler (triangulation),
-    fe (FE_Q<DIM>(1), DIM)
+    fe (FE_Q<DIM>(2), DIM)
   {}
 
 
@@ -204,9 +203,11 @@ namespace compressed_strip
 
     setup_system_constraints();
 
-    newton_update.reinit(dof_handler.n_dofs());
-    system_rhs.reinit (dof_handler.n_dofs());
-    drhs_dlambda.reinit (dof_handler.n_dofs());
+    unsigned int number_dofs = dof_handler.n_dofs();
+
+    newton_update.reinit(number_dofs);
+    system_rhs.reinit (number_dofs);
+    drhs_dlambda.reinit (number_dofs);
 
     DynamicSparsityPattern dsp(dof_handler.n_dofs(), dof_handler.n_dofs());
     DoFTools::make_sparsity_pattern(dof_handler,
@@ -216,6 +217,8 @@ namespace compressed_strip
     sparsity_pattern.copy_from (dsp);
 
     system_matrix.reinit (sparsity_pattern);
+
+    system_matrix_petsc.reinit (sparsity_pattern);
 
     setup_bloch();
 
@@ -515,15 +518,39 @@ namespace compressed_strip
     sparsity_pattern_bloch.copy_from(dsp_bloch);
 
     bloch_matrix.reinit(sparsity_pattern_bloch);
+
+
+//    stiffness_matrix.reinit (2*number_dofs, 2*number_dofs,
+//                             dof_handler.max_couplings_between_dofs());
+
+    stiffness_matrix.reinit(sparsity_pattern_bloch);
+
+    // in parallel.
+    IndexSet local_dofs_index_set = dof_handler.locally_owned_dofs ();
+    IndexSet eigenfunction_index_set(2*number_dofs);
+    for(unsigned int i = 0 ; i < number_dofs; i ++)
+    {
+      if(local_dofs_index_set.is_element(i))
+      {
+        eigenfunction_index_set.add_index(i);
+        eigenfunction_index_set.add_index(i + number_dofs);
+      }
+    }
+
+    eigenfunctions_.resize (5);
+    for (unsigned int i=0; i<eigenfunctions_.size (); ++i)
+      eigenfunctions_[i].reinit (eigenfunction_index_set, MPI_COMM_WORLD);
+
+    eigenvalues_.resize (eigenfunctions_.size ());
   }
 
-  void ElasticProblem::update_bloch_wave_constraints(double wave_ratio)
+  void ElasticProblem::setup_bloch_matched_dofs()
   {
-    constraints_bloch.clear();
+    bloch_boundry_1_dof_index.clear();
+    bloch_boundry_2_dof_index.clear();
 
-    double k_x1 = 2.0*(4.0*atan(1.0))*wave_ratio;
 
-    // get the boundary 0 and boundary 1 dofs
+    // get the boundary 1 and boundary 2 dofs
     const unsigned int   number_dofs = dof_handler.n_dofs();
 
     std::vector<bool> x1_components = {true, false};
@@ -572,18 +599,45 @@ namespace compressed_strip
              (is_x1_comp[i] == is_x1_comp[j]) )
          {
 
-           constraints_bloch.add_line (i);
-           constraints_bloch.add_entry (i, j, cos(k_x1)); //-cos(k_x1));
-           constraints_bloch.add_entry (i, (j + number_dofs) , sin(k_x1)); //-cos(k_x1));
-
-           constraints_bloch.add_line (i + number_dofs);
-           constraints_bloch.add_entry ((i + number_dofs), j, -sin(k_x1));
-           constraints_bloch.add_entry ((i + number_dofs), (j + number_dofs), cos(k_x1));
+           bloch_boundry_1_dof_index.push_back(i);
+           bloch_boundry_2_dof_index.push_back(j);
 
            break;
          }
        }
      }
+    }
+
+    bloch_matched_flag = true;
+
+  }
+
+  void ElasticProblem::update_bloch_wave_constraints(double wave_ratio)
+  {
+
+    if(!bloch_matched_flag)
+    {
+      setup_bloch_matched_dofs();
+    }
+    constraints_bloch.clear();
+
+    double k_x1 = 2.0*(4.0*atan(1.0))*wave_ratio;
+
+    // get the boundary 1 and boundary 2 dofs
+    const unsigned int   number_dofs = dof_handler.n_dofs();
+
+    for (unsigned int k = 0; k < bloch_boundry_1_dof_index.size(); k++)
+    {
+      unsigned int i = bloch_boundry_1_dof_index[k];
+      unsigned int j = bloch_boundry_2_dof_index[k];
+
+      constraints_bloch.add_line (i);
+      constraints_bloch.add_entry (i, j, cos(k_x1)); //-cos(k_x1));
+      constraints_bloch.add_entry (i, (j + number_dofs) , sin(k_x1)); //-cos(k_x1));
+
+      constraints_bloch.add_line (i + number_dofs);
+      constraints_bloch.add_entry ((i + number_dofs), j, -sin(k_x1));
+      constraints_bloch.add_entry ((i + number_dofs), (j + number_dofs), cos(k_x1));
     }
 
     constraints_bloch.close();
@@ -693,7 +747,12 @@ namespace compressed_strip
 
     system_matrix = 0.0;
 
-    QGauss<DIM>  quadrature_formula(2);
+    QGauss<1> quad_x(n_qpoints_x);
+    QGauss<1> quad_y(n_qpoints_y);
+
+    QAnisotropic<DIM> quadrature_formula(quad_x, quad_y);
+
+//    QGauss<DIM>  quadrature_formula(1);
 
     FEValues<DIM> fe_values (fe, quadrature_formula,
                              update_values   | update_gradients |
@@ -773,7 +832,13 @@ namespace compressed_strip
 
     system_rhs = 0.0;
 
-    QGauss<DIM>  quadrature_formula(2);
+    QGauss<1> quad_x(n_qpoints_x);
+    QGauss<1> quad_y(n_qpoints_y);
+
+    QAnisotropic<DIM> quadrature_formula(quad_x, quad_y);
+
+
+//    QGauss<DIM>  quadrature_formula(1);
 
     FEValues<DIM> fe_values (fe, quadrature_formula,
                              update_values   | update_gradients |
@@ -848,7 +913,13 @@ namespace compressed_strip
     system_energy = 0.0;
     congugate_lambda = 0.0;
 
-    QGauss<DIM>  quadrature_formula(2);
+    QGauss<1> quad_x(n_qpoints_x);
+    QGauss<1> quad_y(n_qpoints_y);
+
+    QAnisotropic<DIM> quadrature_formula(quad_x, quad_y);
+
+
+//    QGauss<DIM>  quadrature_formula(1);
 
     FEValues<DIM> fe_values (fe, quadrature_formula,
                              update_values   | update_gradients |
@@ -921,7 +992,13 @@ namespace compressed_strip
 
     drhs_dlambda = 0.0;
 
-    QGauss<DIM>  quadrature_formula(2);
+    QGauss<1> quad_x(n_qpoints_x);
+    QGauss<1> quad_y(n_qpoints_y);
+
+    QAnisotropic<DIM> quadrature_formula(quad_x, quad_y);
+
+
+//    QGauss<DIM>  quadrature_formula(1);
 
     FEValues<DIM> fe_values (fe, quadrature_formula,
                              update_values   | update_gradients |
@@ -1007,7 +1084,7 @@ namespace compressed_strip
   {
     bloch_matrix = 0.0;
 
-    // just copy the system matrix into the upper left and lowwer right blocks of
+    // just copy the system matrix into the upper left and lower right blocks of
     // the bloch_matrix
     unsigned int number_dofs = dof_handler.n_dofs();
     for (unsigned int row = 0; row < system_matrix.m(); ++row)
@@ -1021,6 +1098,83 @@ namespace compressed_strip
        }
     }
 
+  }
+
+  void ElasticProblem::compute_first_bif_amplitude()
+  {
+
+    u1u1 = 0.0;
+    excee = 0.0;
+    QGauss<DIM>  quadrature_formula(10);
+
+    FEValues<DIM> fe_values (fe, quadrature_formula,
+                           update_values   | update_gradients |
+                           update_quadrature_points | update_JxW_values);
+
+    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
+    const unsigned int   n_q_points    = quadrature_formula.size();
+
+
+    std::vector<Vector<double>> solution_vals(n_q_points,
+                                              Vector<double>(DIM));
+
+    std::vector<Vector<double>> u1(n_q_points, Vector<double>(DIM));
+
+    std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
+
+    typename DoFHandler<DIM>::active_cell_iterator cell = dof_handler.begin_active(),
+                                                 endc = dof_handler.end();
+    for (; cell!=endc; ++cell)
+    {
+      fe_values.reinit (cell);
+
+      fe_values.get_function_values(present_solution, solution_vals);
+
+      u1_value_list(fe_values.get_quadrature_points(), u1);
+
+
+      for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+      {
+
+        excee += solution_vals[q_point]*(u1[q_point])*fe_values.JxW(q_point);
+        u1u1 += (u1[q_point])*(u1[q_point])*fe_values.JxW(q_point);
+      }
+
+    }
+
+
+    u1u1 = u1u1/domain_dimensions[0];
+    excee = excee/(domain_dimensions[0]);
+  }
+
+  void ElasticProblem::u1_value_list(const std::vector< Point< DIM > > &  points, std::vector<Vector<double>> & value_list)
+  {
+    for (unsigned int point_n = 0; point_n < points.size(); ++point_n)
+     {
+       Vector<double> tmp(2);
+       Vector<std::complex<double>> tmp_complex(2);
+       double x1 = points[point_n](0);
+       double x2 = points[point_n](1);
+
+       unsigned int t = 0;
+       if(x2 > L1)
+         t = 4;
+
+       for(unsigned int i = 0; i < 4; i++)
+       {
+         std::complex<double> Ae = A[i + t]*std::exp(alphas[i]*x2);
+         std::complex<double> AeB = Ae*B[i];
+
+         tmp_complex[0] += Ae;
+         tmp_complex[1] += AeB;
+
+       }
+
+       tmp[0] = -sin(w_c*x1)*(tmp_complex[0]).real();
+       tmp[1] = cos(w_c*x1)*(tmp_complex[1]).real();
+
+       value_list[point_n] = tmp;
+     }
   }
 
   void ElasticProblem::apply_boundaries_to_rhs(Vector<double> *rhs, std::vector<bool> *homogenous_dirichlet_dofs)
@@ -1423,14 +1577,78 @@ namespace compressed_strip
     assemble_system_matrix();
     apply_boundaries_and_constraints_system_matrix();
 
-    // copy current sparse system matrix to a full matrix.
-    LAPACKFullMatrix<double> system_matrix_full;
-    system_matrix_full.copy_from(system_matrix);
+//    // copy current sparse system matrix to a full matrix.
+//    LAPACKFullMatrix<double> system_matrix_full;
+//    system_matrix_full.copy_from(system_matrix);
+//
+//    Vector<double> eigenvalues;
+//    FullMatrix<double> eigenvectors;
+//
+//    system_matrix_full.compute_eigenvalues_symmetric(-10, 0.3, 1e-5, eigenvalues, eigenvectors);
 
-    Vector<double> eigenvalues;
-    FullMatrix<double> eigenvectors;
+//    unsigned int numEigs = 20;
+//
+//    std::vector<Vector<double> >        eigenfunctions(numEigs);
+//    for(unsigned int i = 0; i < numEigs; i++)
+//      eigenfunctions[i].reinit(2*dof_handler.n_dofs());
+//
+//    std::vector<std::complex<double>>   eigenvalues(numEigs);
+//    SolverControl solver_control (2*dof_handler.n_dofs(), 1e-9);
+//    SparseDirectUMFPACK inverse;
+//    inverse.initialize (system_matrix);
+//    const unsigned int num_arnoldi_vectors = 2*eigenvalues.size() + 2;
+//    ArpackSolver::AdditionalData additional_data(num_arnoldi_vectors, ArpackSolver::WhichEigenvalues::largest_magnitude, true);   //, ArpackSolver::WhichEigenvalues::smallest_magnitude, false);
+//    ArpackSolver eigensolver (solver_control, additional_data);
+//    eigensolver.solve (system_matrix,
+//                       IdentityMatrix(2*dof_handler.n_dofs()),
+//                       inverse,
+//                       eigenvalues,
+//                       eigenfunctions,
+//                       eigenvalues.size(),
+//                       0);
 
-    system_matrix_full.compute_eigenvalues_symmetric(-10, 0.3, 1e-6, eigenvalues, eigenvectors);
+
+    std::vector<PETScWrappers::MPI::Vector> eigenfunctions;
+    std::vector<double>                     eigenvalues;
+    IndexSet eigenfunction_index_set(dof_handler.n_dofs());
+    eigenfunction_index_set.add_range(0, dof_handler.n_dofs());
+    eigenfunctions.resize (1);
+    for (unsigned int i=0; i<eigenfunctions.size (); ++i)
+      eigenfunctions[i].reinit (eigenfunction_index_set, MPI_COMM_WORLD);
+
+    eigenvalues.resize (eigenfunctions.size());
+
+    system_matrix_petsc = 0.0;
+    for (unsigned int row = 0; row < system_matrix.m(); ++row)
+    {
+      const typename SparseMatrix<double>::const_iterator end_row = system_matrix.end(row);
+      for (typename SparseMatrix<double>::const_iterator entry = system_matrix.begin(row);
+                             entry != end_row; ++entry)
+       {
+         if(fabs(entry->value()) > 1e-10 )
+           system_matrix_petsc.set(row, entry->column(),entry->value());
+       }
+    }
+
+    system_matrix_petsc.compress(VectorOperation::insert);
+    SolverControl solver_control (dof_handler.n_dofs(), 1e-6);
+    SLEPcWrappers::SolverKrylovSchur eigensolver (solver_control);
+//    SLEPcWrappers::SolverLAPACK eigensolver (solver_control);
+
+    // Before we actually solve for the eigenfunctions and -values, we have to
+    // also select which set of eigenvalues to solve for. Lets select those
+    // eigenvalues and corresponding eigenfunctions with the smallest real
+    // part (in fact, the problem we solve here is symmetric and so the
+    // eigenvalues are purely real). After that, we can actually let SLEPc do
+    // its work:
+//    eigensolver.set_target_eigenvalue(-10.0);
+    eigensolver.set_which_eigenpairs (EPS_SMALLEST_REAL);
+
+    eigensolver.set_problem_type (EPS_HEP);
+
+    eigensolver.solve (system_matrix_petsc,
+                       eigenvalues, eigenfunctions,
+                       eigenfunctions.size());
 
 
     unsigned int num_neg_eigs = 0;
@@ -1483,31 +1701,87 @@ namespace compressed_strip
     return num_neg_eigs;
   }
 
-  void ElasticProblem::get_bloch_eigenvalues(const int cycle, const int step, double wave_ratio, unsigned int indx)
+  double ElasticProblem::get_bloch_eigenvalues(const int cycle, const int step, double wave_ratio, unsigned int indx, bool first)
   {
     // The cycle is the number appended onto the end of the file. Step is the current step number,
     // and wave_ratio is the wave ratio value between 0 and 0.5
 
-
-    evaluation_point = present_solution;
-    update_F0(present_lambda);
-    assemble_system_matrix();
+    if(first)
+    {
+      evaluation_point = present_solution;
+      update_F0(present_lambda);
+      assemble_system_matrix();
+    }
     assemble_bloch_matrix();
 
     update_bloch_wave_constraints(wave_ratio);
 
     apply_boundaries_and_constraints_bloch_matrix();
 
+//    stiffness_matrix = 0;
+//    for (unsigned int row = 0; row < bloch_matrix.m(); ++row)
+//    {
+//      const typename SparseMatrix<double>::const_iterator end_row = bloch_matrix.end(row);
+//      for (typename SparseMatrix<double>::const_iterator entry = bloch_matrix.begin(row);
+//                             entry != end_row; ++entry)
+//       {
+//         if(fabs(entry->value()) > 1e-8)
+//           stiffness_matrix.set(row, entry->column(),entry->value());
+//       }
+//    }
+//
+//    stiffness_matrix.compress(VectorOperation::insert);
+//    SolverControl solver_control (2*dof_handler.n_dofs(), 1e-5);
+//    SLEPcWrappers::SolverKrylovSchur eigensolver (solver_control);
+////    SLEPcWrappers::SolverLAPACK eigensolver (solver_control);
+//
+//    // Before we actually solve for the eigenfunctions and -values, we have to
+//    // also select which set of eigenvalues to solve for. Lets select those
+//    // eigenvalues and corresponding eigenfunctions with the smallest real
+//    // part (in fact, the problem we solve here is symmetric and so the
+//    // eigenvalues are purely real). After that, we can actually let SLEPc do
+//    // its work:
+////    eigensolver.set_target_eigenvalue(-10.0);
+//    eigensolver.set_which_eigenpairs (EPS_SMALLEST_REAL);
+//
+//    eigensolver.set_problem_type (EPS_HEP);
+//
+//    eigensolver.solve (stiffness_matrix,
+//                       eigenvalues_, eigenfunctions_,
+//                       eigenfunctions_.size());
+
     // copy current sparse system matrix to a full matrix.
 
-    LAPACKFullMatrix<double> bloch_matrix_full;
-    bloch_matrix_full.copy_from(bloch_matrix);
+//    LAPACKFullMatrix<double> bloch_matrix_full;
+//    bloch_matrix_full.copy_from(bloch_matrix);
+//
+//
+//    Vector<double> eigenvalues;
+//    FullMatrix<double> eigenvectors;
+//
+//    bloch_matrix_full.compute_eigenvalues_symmetric(-10, 0.1, 1e-5, eigenvalues, eigenvectors);
 
 
-    Vector<double> eigenvalues;
-    FullMatrix<double> eigenvectors;
+    unsigned int numEigs = 20;
 
-    bloch_matrix_full.compute_eigenvalues_symmetric(-10, 0.1, 1e-6, eigenvalues, eigenvectors);
+    std::vector<Vector<double> >        eigenfunctions(numEigs+1);
+    for(unsigned int i = 0; i < numEigs; i++)
+      eigenfunctions[i].reinit(2*dof_handler.n_dofs());
+
+    std::vector<std::complex<double>>   eigenvalues(numEigs);
+    SolverControl solver_control (2*dof_handler.n_dofs(), 1e-9);
+    SparseDirectUMFPACK inverse;
+    inverse.initialize (bloch_matrix);
+    const unsigned int num_arnoldi_vectors = 2*eigenvalues.size() + 2;
+    ArpackSolver::AdditionalData additional_data(num_arnoldi_vectors, ArpackSolver::WhichEigenvalues::largest_magnitude, true);   //, ArpackSolver::WhichEigenvalues::smallest_magnitude, false);
+    ArpackSolver eigensolver (solver_control, additional_data);
+    eigensolver.solve (bloch_matrix,
+                       IdentityMatrix(2*dof_handler.n_dofs()),
+                       inverse,
+                       eigenvalues,
+                       eigenfunctions,
+                       eigenvalues.size(),
+                       0);
 
     std::string filename(output_directory);
     filename += "/bloch_eigenvalues";
@@ -1535,29 +1809,74 @@ namespace compressed_strip
     // output the eigenvalues to the file
     for (unsigned int i = 0 ; i < eigenvalues.size(); i ++)
     {
-      outputFile << std::setprecision(15) <<  eigenvalues[i] << std::endl;
+      outputFile << std::setprecision(15) <<  eigenvalues[i].real() << std::endl;
     }
 
     outputFile.close();
+
+    return eigenvalues[0].real();
 
   }
 
   void ElasticProblem::set_unstable_eigenvector_as_initial_tangent(unsigned int indx)
   {
+    unsigned int number_dofs = dof_handler.n_dofs();
 
     evaluation_point = present_solution;
     assemble_system_matrix();
     apply_boundaries_and_constraints_system_matrix();
 
-    // copy current sparse system matrix to a full matrix.
-    LAPACKFullMatrix<double> system_matrix_full;
-    system_matrix_full.copy_from(system_matrix);
+//    // copy current sparse system matrix to a full matrix.
+//    LAPACKFullMatrix<double> system_matrix_full;
+//    system_matrix_full.copy_from(system_matrix);
+//
+//    Vector<double> eigenvalues;
+//    FullMatrix<double> eigenvectors;
+//
+//    // get the eigenvalues
+//    system_matrix_full.compute_eigenvalues_symmetric(-10, 0.3, 1e-6, eigenvalues, eigenvectors);
 
-    Vector<double> eigenvalues;
-    FullMatrix<double> eigenvectors;
+    std::vector<PETScWrappers::MPI::Vector> eigenfunctions;
+    std::vector<double>                     eigenvalues;
+    IndexSet eigenfunction_index_set(dof_handler.n_dofs());
+    eigenfunction_index_set.add_range(0, dof_handler.n_dofs());
+    eigenfunctions.resize (8);
+    for (unsigned int i=0; i<eigenfunctions.size (); ++i)
+      eigenfunctions[i].reinit (eigenfunction_index_set, MPI_COMM_WORLD);
 
-    // get the eigenvalues
-    system_matrix_full.compute_eigenvalues_symmetric(-10, 0.3, 1e-6, eigenvalues, eigenvectors);
+    eigenvalues.resize (eigenfunctions.size());
+
+    system_matrix_petsc = 0.0;
+    for (unsigned int row = 0; row < system_matrix.m(); ++row)
+    {
+      const typename SparseMatrix<double>::const_iterator end_row = system_matrix.end(row);
+      for (typename SparseMatrix<double>::const_iterator entry = system_matrix.begin(row);
+                             entry != end_row; ++entry)
+       {
+         if(fabs(entry->value()) > 1e-8)
+           system_matrix_petsc.set(row, entry->column(),entry->value());
+       }
+    }
+
+    system_matrix_petsc.compress(VectorOperation::insert);
+    SolverControl solver_control (dof_handler.n_dofs(), 1e-6);
+    SLEPcWrappers::SolverKrylovSchur eigensolver (solver_control);
+//    SLEPcWrappers::SolverLAPACK eigensolver (solver_control);
+
+    // Before we actually solve for the eigenfunctions and -values, we have to
+    // also select which set of eigenvalues to solve for. Lets select those
+    // eigenvalues and corresponding eigenfunctions with the smallest real
+    // part (in fact, the problem we solve here is symmetric and so the
+    // eigenvalues are purely real). After that, we can actually let SLEPc do
+    // its work:
+//    eigensolver.set_target_eigenvalue(-10.0);
+    eigensolver.set_which_eigenpairs (EPS_SMALLEST_REAL);
+
+    eigensolver.set_problem_type (EPS_HEP);
+
+    eigensolver.solve (system_matrix_petsc,
+                       eigenvalues, eigenfunctions,
+                       eigenfunctions.size());
 
     bool eigenvector_flag = false;
     unsigned int numNegVals = 0;
@@ -1575,7 +1894,7 @@ namespace compressed_strip
 
           initial_solution_tangent.reinit(dof_handler.n_dofs());
           for (unsigned int j = 0; j < dof_handler.n_dofs(); j++)
-            initial_solution_tangent[j] = eigenvectors[j][i];
+            initial_solution_tangent[j] = eigenfunctions[i][j];
 
           break;
         }
@@ -1597,7 +1916,6 @@ namespace compressed_strip
     // Want to make sure that localization happens in the middle of the structure.
     // This can be accomplished by makeing sure the x_2 component of the initial tangent
     // is negatice at x_1 = 0, x_2 = 1
-    unsigned int number_dofs = dof_handler.n_dofs();
     std::vector<Point<DIM>> support_points(number_dofs);
     MappingQ1<DIM> mapping;
     DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
@@ -1790,7 +2108,8 @@ namespace compressed_strip
                                              std::vector<double> energy_values,
                                              std::vector<double> congugate_lambda_values,
                                              std::vector<double> displacement_magnitude,
-                                             const unsigned int cycle) const
+                                             const unsigned int cycle,
+                                             std::vector<bool> stable) const
   {
 
     // output the lambda value, system energy, and the congugate lambda vales for each step
@@ -1816,7 +2135,11 @@ namespace compressed_strip
       load_data_output << std::setprecision(15) << std::setw(8) << lambda_values[i];
       load_data_output << std::setprecision(15) << std::setw(25) << energy_values[i];
       load_data_output << std::setprecision(15) << std::setw(25) << congugate_lambda_values[i];
-      load_data_output << std::setprecision(15) << std::setw(25) << displacement_magnitude[i] << std::endl;
+      load_data_output << std::setprecision(15) << std::setw(25) << displacement_magnitude[i];
+      if(stable.size() > 1)
+        load_data_output << std::setw(25) << stable[i] << std::endl;
+      else
+        load_data_output << std::endl;
     }
 
     load_data_output.close();
@@ -1901,21 +2224,74 @@ namespace compressed_strip
       }
 
       // read in exponential growth parameter and possibly the l1 value
-      double l1;
+
+      double val1;
+      double val2;
+      double val3;
+      double nuVal;
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%lg %lg", &kappa, &l1);
-      if(valuesWritten < 1)
+      valuesWritten = sscanf(nextLine, "%lg %lg %lg", &val1, &val2, &val3);
+      if(valuesWritten < 1 || (valuesWritten == 1 && val1 < 1.0))
       {
         fileReadErrorFlag = true;
         goto fileClose;
       }
-      else if (valuesWritten == 2)
+      else if ((valuesWritten == 1) && val1 > 1.0)
       {
-        mu = new MuFunction(kappa, l1);
-      }
-      else
+        // treat as just a kappa value
+        kappa = val1;
+        L1 = 1.1;
+        nuVal = NU_VALUE;
+
+        pieceConstFlag = false;
+
         mu = new MuFunction(kappa);
 
+        std::cout << "Using Exponential mu with: k = " << kappa << ", nu = " << nuVal << std::endl;
+      }
+      else if((valuesWritten == 2) && val1 < 1.0)
+      {
+        // treat as nu and a kappa
+        nuVal = val1;
+        kappa = val2;
+        L1 = 1.1;
+
+        pieceConstFlag = false;
+
+        mu = new MuFunction(kappa);
+        nu.set_nu_value(nuVal);
+
+        std::cout << "Using Exponential mu with: k = " << kappa << ", nu = " << nuVal << std::endl;
+
+      }
+      else if((valuesWritten == 2) && val1 >= 1.0)
+      {
+        // treat as a kappa and a l1
+        kappa = val1;
+        L1 = val2;
+        nuVal = NU_VALUE;
+
+        pieceConstFlag = true;
+
+        mu = new MuFunction(kappa, L1);
+
+        std::cout << "Using Piecewise Constant mu with: k = " << kappa << ", L1 = " << L1 << ", nu = " << nuVal << std::endl;
+
+      }
+      else if(valuesWritten == 3)
+      {
+        // treat as a nu, kappa, and l1
+        nuVal = val1;
+        kappa = val2;
+        L1 = val3;
+
+        pieceConstFlag = true;
+
+        mu = new MuFunction(kappa, L1);
+        nu.set_nu_value(nuVal);
+
+        std::cout << "Using Piecewise Constant mu with: k = " << kappa << ", L1 = " << L1 << ", nu = " << nuVal << std::endl;
+      }
 
 
       // read in critical lambda
@@ -1936,7 +2312,7 @@ namespace compressed_strip
         goto fileClose;
       }
 
-      // read in the critical frequency
+      // read in the ds and load steps
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
       valuesWritten = sscanf(nextLine, "%lg %u", &ds, &load_steps);
       if(valuesWritten != 2)
@@ -1945,7 +2321,7 @@ namespace compressed_strip
         goto fileClose;
       }
 
-      // read in the critical frequency
+      // read in the output every
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
       valuesWritten = sscanf(nextLine, "%u", &output_every);
       if(valuesWritten != 1)
@@ -1981,6 +2357,230 @@ namespace compressed_strip
     if (stat(output_directory, &st) == -1)
       mkdir(output_directory, 0700);
 
+  }
+
+  void ElasticProblem::read_asymptotic_input_file(char* filename)
+  {
+    FILE* fid;
+    int endOfFileFlag;
+    char nextLine[MAXLINE];
+
+    int valuesWritten;
+    bool fileReadErrorFlag = false;
+    unsigned int dummy;
+    unsigned int dummy1;
+
+    grid_dimensions.resize(2);
+    domain_dimensions.resize(2);
+
+    fid = std::fopen(filename, "r");
+    if (fid == NULL)
+    {
+     std::cout << "Unable to open file \"" << filename  << "\"" <<  std::endl;
+     fileReadErrorFlag = true;
+    }
+    else
+    {
+      double nuVal = 0.0;
+      double kappa_new = 0.0;
+      double L1_new = 0.0;
+
+
+      // Read in the output name
+      char directory_name[MAXLINE];
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%s", directory_name);
+      if (valuesWritten != 1)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+
+      // Read in the number of unit cells
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%u", &dummy);
+      if (valuesWritten != 1)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+
+      // Read in the grid dimensions
+      unsigned int nonUniformFlag;
+      nonUniformFlag = 0;
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%u %u %u", &dummy, &dummy1, &nonUniformFlag);
+      if(valuesWritten < 2)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+      else if(valuesWritten == 3)
+      {
+        if(nonUniformFlag == 1)
+          nonUniform_mesh_flag = true;
+        else
+          nonUniform_mesh_flag = false;
+      }
+      else
+        nonUniform_mesh_flag = false;
+
+      grid_dimensions[0] *= number_unit_cells;
+
+      // read in exponential growth parameter and possibly the L1 value and possibly the nu value. Compare to what we already loaded too
+
+      double val1;
+      double val2;
+      double val3;
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg %lg %lg", &val1, &val2, &val3);
+      if(valuesWritten < 1 || (valuesWritten == 1 && val1 < 1.0))
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+      else if ((valuesWritten == 1) && val1 >= 1.0)
+      {
+        // treat as just a kappa value
+        kappa_new = val1;
+        L1_new = 1.1;
+        nuVal = NU_VALUE;
+
+        std::cout << "Using Exponential mu with: k = " << kappa_new << ", nu = " << nuVal << std::endl;
+      }
+      else if((valuesWritten == 2) && val1 < 1.0)
+      {
+        // treat as nu and a kappa
+        nuVal = val1;
+        kappa_new = val2;
+        L1_new = 1.1;
+
+        std::cout << "Using Exponential mu with: k = " << kappa_new << ", nu = " << nuVal << std::endl;
+
+      }
+      else if((valuesWritten == 2) && val1 >= 1.0)
+      {
+        // treat as a kappa and a l1
+        kappa_new = val1;
+        L1_new = val2;
+        nuVal = NU_VALUE;
+
+        std::cout << "Using Piecewise Constant mu with: k = " << kappa_new << ", L1 = " << L1_new << ", nu = " << nuVal << std::endl;
+
+      }
+      else if(valuesWritten == 3)
+      {
+        // treat as a nu, kappa, and l1
+        nuVal = val1;
+        kappa_new = val2;
+        L1_new = val3;
+
+        std::cout << "Using Piecewise Constant mu with: k = " << kappa_new << ", L1 = " << L1_new << ", nu = " << nuVal << std::endl;
+      }
+
+      // check that everything matches
+      if(!(kappa_new == kappa && L1_new == L1 && nuVal == nu.get_nu_value()))
+      {
+        std::cout << "Parameters for asymptotic input file do not match the original input file\n";
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+
+
+      // read in critical lambda
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg", &critical_lambda_analytical);
+      if(valuesWritten != 1)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+
+      // read in the critical frequency
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg", &critical_frequency);
+      if(valuesWritten != 1)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+      w_c = critical_frequency;
+
+
+      double re1, re2, im1, im2, re3, re4, im3, im4;
+
+      // read in the roots to the characteristic, alphas
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg %lg %lg %lg %lg",
+         &re1, &im1, &re2, &im2, &re3, &im3, &re4, &im4);
+      if(valuesWritten != 8)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+      alphas.resize(4);
+      alphas[0] = std::complex<double>(re1, im1);
+      alphas[1] = std::complex<double>(re2, im2);
+      alphas[2] = std::complex<double>(re3, im3);
+      alphas[3] = std::complex<double>(re4, im4);
+
+      double re5, re6, im5, im6, re7, re8, im7, im8;
+
+      // read in the amplitude A's
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg %lg %lg %lg %lg %lg %lg %lg %lg %lg %lg %lg %lg",
+         &re1, &im1, &re2, &im2, &re3, &im3, &re4, &im4, &re5, &im5, &re6, &im6, &re7, &im7, &re8, &im8);
+      if((valuesWritten != 8 && valuesWritten != 16)
+         || (pieceConstFlag == (valuesWritten == 8)) )
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+      else if(valuesWritten == 16)
+      {
+        A.resize(8);
+        A[4] = std::complex<double>(re5, im5);
+        A[5] = std::complex<double>(re6, im6);
+        A[6] = std::complex<double>(re7, im7);
+        A[7] = std::complex<double>(re8, im8);
+      }
+      else
+        A.resize(4);
+
+      A[0] = std::complex<double>(re1, im1);
+      A[1] = std::complex<double>(re2, im2);
+      A[2] = std::complex<double>(re3, im3);
+      A[3] = std::complex<double>(re4, im4);
+
+      // read in the B's
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%lg %lg %lg %lg %lg %lg %lg %lg",
+         &re1, &im1, &re2, &im2, &re3, &im3, &re4, &im4);
+      if(valuesWritten != 8)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+      B.resize(4);
+      B[0] = std::complex<double>(re1, im1);
+      B[1] = std::complex<double>(re2, im2);
+      B[2] = std::complex<double>(re3, im3);
+      B[3] = std::complex<double>(re4, im4);
+
+      fileClose:
+      {
+       fclose(fid);
+      }
+    }
+
+    if (fileReadErrorFlag)
+    {
+     // default parameter values
+     std::cout << "Error reading input file, Exiting.\n" << std::endl;
+     exit(1);
+    }
+    else
+     std::cout << "Input file successfully read" << std::endl;
   }
 
   void ElasticProblem::getNextDataLine( FILE* const filePtr, char* nextLinePtr,

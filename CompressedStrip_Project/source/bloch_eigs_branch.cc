@@ -45,9 +45,9 @@ int main ()
 
   ep.set_unstable_eigenvector_as_initial_tangent(number_negative_eigs);
 
-  ep.initial_lambda_tangent = 0.5;
+  ep.initial_lambda_tangent = 0.0;
   double scalingVal = sqrt(1 - ep.initial_lambda_tangent*ep.initial_lambda_tangent);
-  ep.initial_solution_tangent *= -1.0*scalingVal;
+  ep.initial_solution_tangent *= 1.0*scalingVal;
 
   double previous_lambda = ep.get_present_lambda();
   previous_solution = ep.present_solution;
@@ -66,16 +66,20 @@ int main ()
   congugate_lambda_values[0] = ep.congugate_lambda;
   energy_values[0] = ep.system_energy;
 
+  unsigned int current_stability = true;
 
   for(unsigned int i = 1; i < ep.get_load_steps(); i ++)
   {
     std::cout << "    Step Number : " << i << std::endl;
     if(i%30 == 0)
     {
-      for(unsigned int j = 0; j < 50; j++)
+      for(unsigned int j = 49; j < 50; j++)
       {
         double wave_ratio = j*0.01;
-        ep.get_bloch_eigenvalues(j, i/30, wave_ratio, 1);
+        double lowestEig = ep.get_bloch_eigenvalues(j, i/ep.get_output_every(), wave_ratio, 0, (j == 0 ? true : false));
+
+        if(lowestEig < -1e-6)
+          current_stability = false;
       }
     }
 
@@ -96,6 +100,7 @@ int main ()
 
     ep.path_follow_PACA_iterate(&(solution_tangent), lambda_tangent, ep.get_ds());
     std::cout << std::setprecision(15) << "    Lambda = " << ep.get_present_lambda() << std::endl;
+    std::cout << "     Stable : " << current_stability << std::endl;
 
 
     // get energy and congugate lambda value and save them.

@@ -32,14 +32,52 @@ int main ()
             << ep.get_n_dofs()
             << std::endl << std::endl;
 
+  ep.set_present_lambda(ep.critical_lambda_analytical);
+  ep.update_F0(ep.critical_lambda_analytical);
 
   ep.assemble_asymptotic_integrals();
 
-  double bif_val_1 = -0.5*ep.E_u1u1u1/(ep.dEdlambda_u1u1);
-  double bif_val_2 = -(1.0/3.0)*(ep.E_u1u1u1u1 + 3.0*ep.E_u2u1u1)/(ep.dEdlambda_u1u1);
+//  ep.check_W_derivs();
 
-  std::cout << "\n\n LAMBDA_1 : " << bif_val_1 << std::endl;
-  std::cout << " LAMBDA_2 : " <<  bif_val_2 << std::endl;
+  ep.assemble_vexex_eq();
+  ep.output_results(0);
+//  for(unsigned int i = 0; i < ep.vexex_eq.size(); i++)
+//  {
+//    std::cout << ep.vexex_eq[i] << std::endl;
+//  }
+
+  std::cout << "\n\n LAMBDA_1 : " << ep.get_deltaLambda1() << std::endl;
+  std::cout << " LAMBDA_2 : " <<  ep.get_deltaLambda2() << std::endl;
+  std::cout << " BIG_LAMBDA_2 : " << ep.get_deltaConguateLambda2() << std::endl;
+
+  FILE* fid;
+
+  char newFileName[MAXLINE];
+  char *token;
+
+  token = strtok(fileName, "/");
+  token = strtok(NULL, ".");
+
+  sprintf(newFileName, "%s", ep.output_directory);
+  strcat(newFileName, "/");
+  strcat(newFileName, token);
+  strcat(newFileName, ".out");
+
+  std::cout << "Printing File to : " << newFileName << std::endl;
+
+  fid = std::fopen(newFileName, "w");
+  if (fid == NULL)
+  {
+    std::cout << "Unable to open file \"" << fileName  << "\"" <<  std::endl;
+  }
+  else
+  {
+    fprintf(fid, "%.16f\n%.16f\n%.16f", ep.get_kappa() ,ep.get_deltaLambda2(),ep.get_deltaConguateLambda2());
+  }
+
+
+
+//  std::cout << ep.E_u1u1u1u1 << std::endl << ep.E_u2u1u1 << std::endl << ep.dEdlambda_u1u1 << std::endl << ep.E_u2u2 << std::endl;
 
   return(0);
 }

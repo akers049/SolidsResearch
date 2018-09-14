@@ -49,6 +49,8 @@ int main ()
     congugate_lambda_values.push_back(ep.congugate_lambda/ep.get_number_unit_cells());
     energy_values.push_back(ep.system_energy/ep.get_number_unit_cells());
     displacement_magnitude.push_back(ep.present_solution.l2_norm()/(sqrt(1.0*ep.get_number_unit_cells())));
+    ep.output_results(i+5000);
+
 
   }
   ep.output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude, 4);

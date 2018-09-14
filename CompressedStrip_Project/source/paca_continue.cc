@@ -13,7 +13,7 @@ int main ()
   ep.read_input_file(fileName);
 
   // read it the current state
-  ep.load_state(0);
+  ep.load_state(1);
 
   ep.setup_system();
 
@@ -37,9 +37,9 @@ int main ()
 
   ep.set_unstable_eigenvector_as_initial_tangent(number_negative_eigs);
 
-  ep.initial_lambda_tangent = 0.3;
+  ep.initial_lambda_tangent = 0.0;
   double scalingVal = sqrt(1 - ep.initial_lambda_tangent*ep.initial_lambda_tangent);
-  ep.initial_solution_tangent *= scalingVal;
+  ep.initial_solution_tangent *= -scalingVal;
 
 //  ep.set_present_lambda(ep.get_present_lambda() -  5e-5);
 //  ep.newton_iterate();

@@ -51,9 +51,16 @@
 #include <deal.II/lac/sparse_direct.h>
 #include <deal.II/lac/solver_minres.h>
 #include <deal.II/lac/lapack_full_matrix.h>
+#include <deal.II/lac/arpack_solver.h>
+
 
 
 #include <deal.II/lac/trilinos_sparse_matrix.h>
+
+#include <deal.II/lac/petsc_sparse_matrix.h>
+#include <deal.II/lac/petsc_parallel_vector.h>
+#include <deal.II/lac/slepc_solver.h>
+
 
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
@@ -63,6 +70,7 @@
 
 #define MAXLINE 1024
 #define DIM 2
+
 
 namespace compressed_strip
 {
@@ -90,6 +98,11 @@ namespace compressed_strip
      virtual void value_list(const std::vector< Point< DIM > > &  points,
                               std::vector< double > &   values,
                               const unsigned int  component = 0 )   const;
+
+     void set_nu_value(double nuVal){nuValue = nuVal;}
+     double get_nu_value(){return nuValue;}
+
+     double nuValue = 0.33;
 
    };
 
@@ -160,7 +173,7 @@ namespace compressed_strip
                                          double lambdaGuess, double ds);
 
     unsigned int get_system_eigenvalues(double lambda_eval, const int cycle);
-    void get_bloch_eigenvalues(const int cycle, const int step, double wave_ratio, unsigned int indx);
+    double get_bloch_eigenvalues(const int cycle, const int step, double wave_ratio, unsigned int indx, bool first);
     void set_unstable_eigenvector_as_initial_tangent(unsigned int indx);
 
     double bisect_find_lambda_critical(double lowerBound, double upperBound,
@@ -170,9 +183,11 @@ namespace compressed_strip
                          std::vector<double> energy_values,
                          std::vector<double> congugate_lambda_values,
                          std::vector<double> displacement_magnitude,
-                         const unsigned int cycle)  const;
+                         const unsigned int cycle,
+                         std::vector<bool> stable = std::vector<bool> (1, true)) const;
 
     void read_input_file(char* filename);
+    void read_asymptotic_input_file(char* filename);
 
     void save_current_state(unsigned int indx);
     void load_state(unsigned int indx);
@@ -186,6 +201,9 @@ namespace compressed_strip
               { present_lambda = lambda_val;
                 update_F0(present_lambda); };
     double get_ds(){return ds;};
+    double get_first_bif_amplitude(){
+      compute_first_bif_amplitude();
+      return excee;};
     unsigned int get_output_every(){return output_every;};
     unsigned int get_load_steps(){return load_steps;};
     unsigned int get_n_dofs(){return dof_handler.n_dofs();};
@@ -201,8 +219,11 @@ namespace compressed_strip
     double               system_energy = 0.0;
     double               congugate_lambda = 0.0;
 
+    double u1u1 = 0.0;
+
     double critical_lambda_analytical = 0.0;
     double critical_frequency = 0.0;
+    double w_c = 0.0;     // This is the same as critical_frequency...
 
 
   private:
@@ -212,12 +233,16 @@ namespace compressed_strip
     void make_periodicity_constraints();
     void make_ave_x1_constraints();
     void make_symmetry_constraints();
+    void setup_bloch_matched_dofs();
     void setup_bloch ();
 
     void assemble_system_matrix();
     void assemble_system_rhs();
     void assemble_drhs_dlambda();
     void assemble_bloch_matrix();
+
+    void compute_first_bif_amplitude();
+    void u1_value_list(const std::vector< Point< DIM > > &  points, std::vector<Vector<double>> & value_list);
 
     void apply_boundaries_and_constraints_system_matrix();
     void apply_boundaries_to_rhs(Vector<double> *rhs, std::vector<bool> *homogenous_dirichlet_dofs);
@@ -258,6 +283,11 @@ namespace compressed_strip
     SparsityPattern      sparsity_pattern_bloch;
     SparseMatrix<double> bloch_matrix;
 
+    PETScWrappers::SparseMatrix          system_matrix_petsc;
+    PETScWrappers::SparseMatrix             stiffness_matrix;
+    std::vector<PETScWrappers::MPI::Vector> eigenfunctions_;
+    std::vector<double>                     eigenvalues_;
+
     Compressible_NeoHookean nh;
 
     double               present_lambda = 0.0;
@@ -282,15 +312,29 @@ namespace compressed_strip
     double ds = 0.0;
     unsigned int load_steps = 0;
     unsigned int output_every = 0;
-    unsigned int number_unit_cells = 1.0;
+    unsigned int number_unit_cells = 1;
+    unsigned int n_qpoints_x = 3;
+    unsigned int n_qpoints_y = 3;
+
 
     bool fileLoadFlag = false;
+
+    bool pieceConstFlag = false;
+    std::vector<std::complex<double>> A;
+    std::vector<std::complex<double>> B;
+    std::vector<std::complex<double>> alphas;
+    double L1 = 1.0;
+    double excee = 0.0;
+
 
     char output_directory[MAXLINE];
 
     NuFunction nu;
     MuFunction *mu = NULL;
 
+    bool bloch_matched_flag = false;
+    std::vector<int> bloch_boundry_1_dof_index;
+    std::vector<int> bloch_boundry_2_dof_index;
     std::vector<int> matched_dofs;
 
   };

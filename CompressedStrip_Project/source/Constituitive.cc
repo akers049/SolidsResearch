@@ -65,7 +65,7 @@ using namespace dealii;
   {
     Tensor<6, DIM> tmp;
 
-    const double nu_frac = nu/(1 - nu);
+    const double nu_frac = nu/(1.0 - nu);
     const double II_C = II_F*II_F;
 
     for (unsigned int i=0; i<DIM; ++i)
@@ -95,7 +95,7 @@ using namespace dealii;
   {
     Tensor<8, DIM> tmp;
 
-    const double nu_frac = nu/(1 - nu);
+    const double nu_frac = mu*nu/(1.0 - nu);
     const double II_C = II_F*II_F;
 
     for (unsigned int i=0; i<DIM; ++i)
@@ -108,7 +108,7 @@ using namespace dealii;
                   for (unsigned int q=0; q<DIM; ++q)
                   {
                     tmp[i][j][k][l][m][n][p][q] =
-                       (1.0 - 2.0*nu_frac*(II_C - II_F))*(F_inv[j][p]*F_inv[q][m]*F_inv[n][k]*F_inv[l][i] +
+                       (mu - 2.0*nu_frac*(II_C - II_F))*(F_inv[j][p]*F_inv[q][m]*F_inv[n][k]*F_inv[l][i] +
                                                           F_inv[j][m]*F_inv[n][p]*F_inv[q][k]*F_inv[l][i] +
                                                           F_inv[j][m]*F_inv[n][k]*F_inv[l][p]*F_inv[q][i] +
                                                           F_inv[j][p]*F_inv[q][k]*F_inv[l][m]*F_inv[n][i] +
@@ -134,7 +134,6 @@ using namespace dealii;
                        16.0*nu_frac*(II_C - 0.125*II_F)*F_inv[n][m]*F_inv[l][k]*F_inv[j][i]*F_inv[q][p];
                  }
 
-    tmp *= mu;
 
     return tmp;
   }

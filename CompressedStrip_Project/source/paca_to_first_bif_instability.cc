@@ -2,8 +2,9 @@
 #include <fstream>
 
 using namespace dealii;
-int main ()
+int main (int argc, char** argv)
 {
+  Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
   compressed_strip::ElasticProblem ep;
 
@@ -15,6 +16,10 @@ int main ()
   ep.create_mesh();
 
   ep.setup_system();
+
+  std::cout << "Please enter an asymptotic input file: " << std::endl;
+  std::cin >> fileName;
+  ep.read_asymptotic_input_file(fileName);
 
   std::cout << "\n   Number of active cells:       "
             << ep.get_number_active_cells()
@@ -38,6 +43,10 @@ int main ()
   ep.output_results (0);
   ep.assemble_system_energy_and_congugate_lambda();
 
+  std::vector<double> lambda_values;
+  std::vector<double> congugate_lambda_values;
+  std::vector<double> energy_values;
+  std::vector<double> displacement_magnitude;
 
   double lambda_start = lambda_c + 1e-5;
   ep.set_present_lambda(lambda_start);
@@ -58,11 +67,6 @@ int main ()
   Vector<double> solution_tangent;
   double lambda_tangent;
   double scalingVal;
-
-  std::vector<double> lambda_values;
-  std::vector<double> congugate_lambda_values;
-  std::vector<double> energy_values;
-  std::vector<double> displacement_magnitude;
 
   unsigned int num_negative_eigs = 0;
   unsigned int prev_num_negative_eigs = 0;
@@ -99,21 +103,25 @@ int main ()
    lambda_values.push_back(ep.get_present_lambda());
    congugate_lambda_values.push_back(ep.congugate_lambda/ep.get_number_unit_cells());
    energy_values.push_back(ep.system_energy/ep.get_number_unit_cells());
-   displacement_magnitude.push_back(ep.present_solution.l2_norm()/(sqrt(1.0*ep.get_number_unit_cells())));
+//   displacement_magnitude.push_back(ep.present_solution.l2_norm()/(sqrt(1.0*ep.get_number_unit_cells())));
+   displacement_magnitude.push_back(ep.get_first_bif_amplitude());
 
    prev_num_negative_eigs = num_negative_eigs;
-//num_negative_eigs = ep.get_system_eigenvalues(ep.get_present_lambda(), i);
+
+   num_negative_eigs = ep.get_system_eigenvalues(ep.get_present_lambda(), i);
    std::cout << "    Number negative Eigenvalues : " << num_negative_eigs << std::endl;
    std::cout << "    Step Number : " << step_number << std::endl;
    if ((i > 10 && num_negative_eigs == (prev_num_negative_eigs + 1)))
    {
      std::cout << "\n Eigenvalue Crossing Found. Outputting current state and stopping" << std::endl;
-     break;
+//     break;
    }
   }
   ep.output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude, 1);
 
-  ep.save_current_state(0);
+  ep.save_current_state(1);
+
+  std::cout << "\n\n\n u1u1 = " << ep.u1u1 << std::endl;
 
   return 0;
 }

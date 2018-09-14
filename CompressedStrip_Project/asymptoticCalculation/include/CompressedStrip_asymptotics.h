@@ -93,6 +93,11 @@ namespace compressed_strip
                               std::vector< double > &   values,
                               const unsigned int  component = 0 )   const;
 
+     void set_nu_value(double nuVal){nuValue = nuVal;}
+     double get_nu_value(){return nuValue;}
+
+     double nuValue = 0.33;
+
    };
 
 
@@ -151,6 +156,7 @@ namespace compressed_strip
 
     void assemble_system_energy_and_congugate_lambda();
     void assemble_asymptotic_integrals();
+    void assemble_vexex_eq();
 
     void update_F0(const double lambda);
 
@@ -165,6 +171,17 @@ namespace compressed_strip
     unsigned int get_number_active_cells(){return triangulation.n_active_cells();};
     unsigned int get_number_unit_cells(){return number_unit_cells;};
 
+    double get_deltaLambda1(){return delta_lambda1;};
+    double get_deltaLambda2(){return delta_lambda2;};
+    double get_deltaConguateLambda2(){return delta_conguateLambda2;};
+    double get_kappa(){return kappa;};
+
+    void check_W_derivs();
+    void output_results(const unsigned int cycle) const;
+
+    Vector<double>       vexex_eq;
+
+
     Vector<double>       present_solution;
     Vector<double>       evaluation_point;
     double               initial_lambda_tangent = 0.0;
@@ -174,23 +191,31 @@ namespace compressed_strip
     double               E_u1u1u1 = 0.0;
     double               E_u1u1u1u1 = 0.0;
     double               E_u2u1u1 = 0.0;
+
+    double               E_u2u2 = 0.0;
     double               dEdlambda_u1u1 = 0.0;
     double               congugate_lambda = 0.0;
 
     double critical_lambda_analytical = 0.0;
     double critical_frequency = 0.0;
 
+    char output_directory[MAXLINE];
 
   private:
+
 
     void get_grad_u1_value_list(const std::vector< Point< DIM > > &  points, std::vector<Tensor<2, DIM>> & value_list);
 
 
     void get_grad_u2_value_list(const std::vector< Point< DIM > > &  points, std::vector<Tensor<2, DIM>> & value_list);
 
+    void u1_value_list(const std::vector< Point< DIM > > &  points, std::vector<Vector<double>> & value_list);
+
     double E1(double x2);
     double E2(double x2);
     double E2_tilde(double x2);
+
+    void   get_u1();
 
     double E1exp_real(double x2)
     {
@@ -229,6 +254,7 @@ namespace compressed_strip
                             int const maxSize, int* const endOfFileFlag);
 
     void renumber_boundary_ids();
+
 
 
     Triangulation<DIM,DIM>   triangulation;
@@ -279,10 +305,15 @@ namespace compressed_strip
     bool pieceConstFlag = false;
     bool fileLoadFlag = false;
 
-    char output_directory[MAXLINE];
 
     NuFunction nu;
     MuFunction *mu = NULL;
+
+    Vector<double> u1;
+
+    double delta_lambda1 = 0.0;
+    double delta_lambda2 = 0.0;
+    double delta_conguateLambda2 = 0.0;
 
 
     unsigned int root_index = 0;

@@ -62,8 +62,6 @@ namespace compressed_strip
 
     // Put your function for nu. p(0) is x1 value, p(1) is the x2 value
 
-    double nuValue = NU_VALUE;
-
     return nuValue;
   }
 
@@ -214,12 +212,110 @@ namespace compressed_strip
     {
       dof_handler.distribute_dofs (fe);
       present_solution.reinit (dof_handler.n_dofs());
+      present_solution = 0.0;
+
+      vexex_eq.reinit (dof_handler.n_dofs());
+      vexex_eq = 0.0;
+
+      u1.reinit (dof_handler.n_dofs());
+      u1 = 0.0;
     }
 
     evaluation_point = present_solution;
 
   }
 
+  void ElasticProblem::check_W_derivs()
+  {
+
+    double eps = 1e-7;
+    Tensor<2,DIM> F;
+    F[0][0] = 0.2345;
+    F[0][1] = 0.1723;
+    F[1][0] = 0.0543;
+    F[1][1] = 0.12223;
+
+    Tensor<2, DIM> F_inv = invert(F);
+    double II_F = determinant(F);
+
+    Tensor<2, DIM> dW_dF = nh.get_piola_kirchoff_tensor(0.33, 1.0, F, F_inv, II_F);
+    Tensor<4,DIM> d2W_dF = nh.get_incremental_moduli_tensor(0.33, 1.0, F_inv, II_F);
+    Tensor<6,DIM> d3W_dF = nh.get_d3W_dFdFdF(0.33, 1.0, F_inv, II_F);
+    Tensor<8,DIM> d4W_dF = nh.get_d4W_dFdFdFdF(0.33, 1.0, F_inv, II_F);
+
+
+    Tensor<4, DIM> d2_numer;
+    // check d3w
+    for(unsigned int i = 0; i < DIM ;i ++)
+      for(unsigned int j = 0; j < DIM; j++)
+      {
+        F[i][j] += eps;
+        Tensor<2, DIM> F_inv_ = invert(F);
+        double II_F_ = determinant(F);
+        Tensor<2,DIM> dW_dF_new = nh.get_piola_kirchoff_tensor(0.33, 1.0, F, F_inv_, II_F_);
+        F[i][j] -= eps;
+
+
+        for(unsigned int k = 0; k < DIM ;k ++)
+          for(unsigned int l = 0; l < DIM; l++)
+              {
+                d2_numer[k][l][i][j] = ((dW_dF_new[k][l] - dW_dF[k][l])/eps - d2W_dF[k][l][i][j])/d2W_dF[k][l][i][j];
+              }
+      }
+
+
+    Tensor<6, DIM> d3_numer;
+    // check d3w
+    for(unsigned int i = 0; i < DIM ;i ++)
+      for(unsigned int j = 0; j < DIM; j++)
+      {
+        F[i][j] += eps;
+        Tensor<2, DIM> F_inv_ = invert(F);
+        double II_F_ = determinant(F);
+        F[i][j] -= eps;
+
+        Tensor<4,DIM> d2W_dF_new = nh.get_incremental_moduli_tensor(0.33, 1.0, F_inv_, II_F_);
+
+        for(unsigned int k = 0; k < DIM ;k ++)
+          for(unsigned int l = 0; l < DIM; l++)
+            for(unsigned int m = 0; m < DIM ;m ++)
+              for(unsigned int n = 0; n < DIM; n++)
+              {
+                d3_numer[k][l][m][n][i][j] = ((d2W_dF_new[k][l][m][n] - d2W_dF[k][l][m][n])/eps - d3W_dF[k][l][m][n][i][j])/d3W_dF[k][l][m][n][i][j];
+              }
+      }
+
+
+
+    // check d4w
+    Tensor<8, DIM> d4_numer;
+    for(unsigned int i = 0; i < DIM ;i ++)
+      for(unsigned int j = 0; j < DIM; j++)
+      {
+        F[i][j] += eps;
+        Tensor<2, DIM> F_inv_ = invert(F);
+        double II_F_ = determinant(F);
+        F[i][j] -= eps;
+
+        Tensor<6,DIM> d3W_dF_new = nh.get_d3W_dFdFdF(0.33, 1.0, F_inv_, II_F_);
+
+        for(unsigned int k = 0; k < DIM ;k ++)
+          for(unsigned int l = 0; l < DIM; l++)
+            for(unsigned int m = 0; m < DIM ;m ++)
+              for(unsigned int n = 0; n < DIM; n++)
+                for(unsigned int p = 0; p < DIM ; p ++)
+                  for(unsigned int q = 0; q < DIM; q++)
+                  {
+                    d4_numer[k][l][m][n][p][q][i][j] = ((d3W_dF_new[k][l][m][n][p][q] - d3W_dF[k][l][m][n][p][q])/eps - d4W_dF[k][l][m][n][p][q][i][j])/(d4W_dF[k][l][m][n][p][q][i][j]);
+                  }
+      }
+
+
+    std::cout << "Norm of the difference for d2W : " << d2_numer.norm() << std::endl;
+    std::cout << "Norm of the difference for d3W : " << d3_numer.norm() << std::endl;
+    std::cout << "Norm of the difference for d4W : " << d4_numer.norm() << std::endl;
+
+  }
 
   void ElasticProblem::get_grad_u1_value_list(const std::vector< Point< DIM > > &  points, std::vector<Tensor<2, DIM>> & value_list)
   {
@@ -258,8 +354,6 @@ namespace compressed_strip
 
   void ElasticProblem::get_grad_u2_value_list(const std::vector< Point< DIM > > &  points, std::vector<Tensor<2, DIM>> & value_list)
   {
-
-
     for (unsigned int point_n = 0; point_n < points.size(); ++point_n)
     {
       Tensor<2, DIM> tmp;
@@ -290,7 +384,7 @@ namespace compressed_strip
       std::vector<double> E2_exp_integral_imag(4);
 
       double a = 0;
-      if(x2 > L1)
+      if(x2 > L1 && pieceConstFlag == true)
         a = L1;
 
       double abserr = 0., relerr = 1.e-7; // requested errors
@@ -351,15 +445,13 @@ namespace compressed_strip
         tmp_complex[0][1] += phi1[i]*(r[i]*exp_integral_eh[i] + h[i]);
         tmp_complex[1][0] += phi3[i]*exp_integral_eh[i];
         tmp_complex[1][1] += phi3[i]*(r[i]*exp_integral_eh[i] + h[i]);
+
       }
-
-
-      tmp_complex[1][1] += -(1.0/L(2,2,2,2))*E2_tilde(x2);
 
       tmp[0][0] = 2*w_c*cos(2*w_c*x1)*(tmp_complex[0][0]).real();
       tmp[0][1] = sin(2*w_c*x1)*(tmp_complex[0][1]).real();
       tmp[1][0] = -2*w_c*sin(2*w_c*x1)*(tmp_complex[1][0]).real();
-      tmp[1][1] = cos(2*w_c*x1)*(tmp_complex[1][1]).real();
+      tmp[1][1] = cos(2*w_c*x1)*(tmp_complex[1][1]).real() - (1.0/L(2,2,2,2))*E2_tilde(x2);
 
       value_list[point_n] = tmp;
     }
@@ -396,8 +488,8 @@ namespace compressed_strip
     double w_c_2 = w_c*w_c;
     double w_c_3 = w_c*w_c_2;
 
-    double out =  -M(1,1,1,1,1,1)*(w_c_3)*v1*v1 + 2*M(1,1,1,1,2,2)*(w_c_2)*v1*v2_1 - M(1,1,2,2,2,2)*(w_c)*v2_1*v2_1 +
-            2*M(1,1,1,2,2,1)*(w_c_2)*v1_1*v2 + M(1,1,2,1,2,1)*(w_c_3)*v2*v2 +
+    double out =  -M(1,1,1,1,1,1)*(w_c_3)*v1*v1 + 2.0*M(1,1,1,1,2,2)*(w_c_2)*v1*v2_1 - M(1,1,2,2,2,2)*(w_c)*v2_1*v2_1 +
+            2.0*M(1,1,1,2,2,1)*(w_c_2)*v1_1*v2 + M(1,1,2,1,2,1)*(w_c_3)*v2*v2 +
             M(1,2,1,1,1,2)*w_c*(v1_1*v1_1 + v1*v1_11) + M(1,2,1,1,2,1)*(w_c_2)*(v1_1*v2 + v1*v2_1) +
             -M(1,2,2,2,1,2)*(v1_11*v2_1 + v1_1*v2_11) - M(1,2,2,2,2,1)*w_c*(v2_1*v2_1 + v2*v2_11);
 
@@ -461,7 +553,6 @@ namespace compressed_strip
     if(x2 > L1)
       t = 4;
 
-
     double v1 = 0.0;
     double v1_1 = 0.0;
     double v2 = 0.0;
@@ -480,8 +571,8 @@ namespace compressed_strip
 
     double w_c_2 = w_c*w_c;
 
-    double out = 0.5*(M(2,2,2,2,2,2)*v2_1*v2_1 - 2*M(2,2,1,1,2,2)*w_c*v1*v2_1 + M(2,2,1,1,1,1)*(w_c_2)*v1*v1 +
-               M(2,2,1,2,1,2)*v1_1*v1_1 + M(2,2,2,1,2,1)*(w_c_2)*v2*v2 + 2*M(2,2,1,2,2,1)*w_c*v1_1*v2);
+    double out = 0.5*(M(2,2,2,2,2,2)*v2_1*v2_1 - 2.0*M(2,2,1,1,2,2)*w_c*v1*v2_1 + M(2,2,1,1,1,1)*(w_c_2)*v1*v1 +
+               M(2,2,1,2,1,2)*v1_1*v1_1 + M(2,2,2,1,2,1)*(w_c_2)*v2*v2 + 2.0*M(2,2,1,2,2,1)*w_c*v1_1*v2);
 
     return out;
   }
@@ -491,13 +582,13 @@ namespace compressed_strip
 
     Assert ((lambda >= 0 && lambda <= 1.0), ExcInternalError());
 
-    double lambda1 = 1 - lambda;
+    double lambda1 = 1.0 - lambda;
     double lambda2;
 
     // solve quadratic for lambda2
     double a = (1.0 + (2.0*NU_VALUE/(1.0 - NU_VALUE))*lambda1*lambda1);
     double b = (-2.0*NU_VALUE/(1.0 - NU_VALUE))*lambda1;
-    double c = -1;
+    double c = -1.0;
 
 
     // make sure we get the root that is greater than 1.0
@@ -593,8 +684,9 @@ namespace compressed_strip
     E_u2u1u1 = 0.0;
     dEdlambda_u1u1 = 0.0;
     E_u1u1u1 = 0.0;
+    E_u2u2 = 0.0;
 
-    QGauss<DIM>  quadrature_formula(4);
+    QGauss<DIM>  quadrature_formula(6);
 
     FEValues<DIM> fe_values (fe, quadrature_formula,
                              update_values   | update_gradients |
@@ -628,19 +720,35 @@ namespace compressed_strip
                           sqrt(a_nu*a_nu*lambda1*lambda1 + 4.0 *a_nu*lambda1*lambda1 + 4.0);
     double term4 = -sqrt(a_nu*a_nu*lambda1*lambda1 + 4.0 *a_nu*lambda1*lambda1 + 4.0)*4.0*a_nu*lambda1;
 
-    dlambda2_dlambda = -(term1 + term2 + term3 + term4)/(4.0*(1 + a_nu*lambda1*lambda1)*(1 + a_nu*lambda1*lambda1));
+    dlambda2_dlambda = -(term1 + term2 + term3 + term4)/(4.0*(1.0 + a_nu*lambda1*lambda1)*(1.0 + a_nu*lambda1*lambda1));
 
     Tensor<2, DIM> dF_dlambda;
     dF_dlambda[0][0] = dlambda1_dlambda;
-    dF_dlambda[0][1] = 0;
-    dF_dlambda[1][0] = 0;
+    dF_dlambda[0][1] = 0.0;
+    dF_dlambda[1][0] = 0.0;
     dF_dlambda[1][1] = dlambda2_dlambda;
+
+//    std::cout << "\n\n" << lambda_eval << "   " << dlambda2_dlambda << std::endl;
+//
+//
+//    std::vector<Point<DIM> > pp(1);
+//    Point<DIM> ppp(0.1248, 0.432);
+//    pp[0] = ppp;
+//    get_grad_u1_value_list(pp, grad_u2);
+//    std::cout << (grad_u2[0])[0][0] << " " <<  (grad_u2[0])[0][1] << "  " << (grad_u2[0])[1][0] << " " <<  (grad_u2[0])[1][1] << std::endl;
+//
+//    Point<DIM> pp2(0.1248, 0.932);
+//    pp[0] = pp2;
+//    get_grad_u1_value_list(pp, grad_u2);
+//    std::cout << (grad_u2[0])[0][0] << " " <<  (grad_u2[0])[0][1] << "  " << (grad_u2[0])[1][0] << " " <<  (grad_u2[0])[1][1] << std::endl;
+//    exit(-1);
 
 
     typename DoFHandler<DIM>::active_cell_iterator cell = dof_handler.begin_active(),
                                                    endc = dof_handler.end();
     for (; cell!=endc; ++cell)
     {
+
       fe_values.reinit (cell);
 
       fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
@@ -653,10 +761,12 @@ namespace compressed_strip
 
       for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
       {
+
         Tensor<2,DIM> F = get_deformation_gradient(old_solution_gradients[q_point]);
         Tensor<2, DIM> F_inv = invert(F);
         double II_F = determinant(F);
 
+        Tensor<4,DIM> d2W_dF = nh.get_incremental_moduli_tensor(nu_values[q_point], mu_values[q_point], F_inv, II_F);
         Tensor<6,DIM> d3W_dF = nh.get_d3W_dFdFdF(nu_values[q_point], mu_values[q_point], F_inv, II_F);
         Tensor<8,DIM> d4W_dF = nh.get_d4W_dFdFdFdF(nu_values[q_point], mu_values[q_point], F_inv, II_F);
 
@@ -664,10 +774,13 @@ namespace compressed_strip
         double contrib_E_u1u1u1u1 = 0.0;
         double contrib_E_u2u1u1 = 0.0;
         double contrib_dEdlambda_u1u1 = 0.0;
+        double contrib_E_u2u2 = 0.0;
         for (unsigned int i=0; i<DIM; ++i)
           for (unsigned int j=0; j<DIM; ++j)
             for (unsigned int k=0; k<DIM; ++k)
               for (unsigned int l=0; l<DIM; ++l)
+              {
+                contrib_E_u2u2 += d2W_dF[i][j][k][l]*(grad_u2[q_point])[i][j]*(grad_u2[q_point])[k][l];
                 for (unsigned int m=0; m<DIM; ++m)
                   for (unsigned int n=0; n<DIM; ++n)
                   {
@@ -678,7 +791,7 @@ namespace compressed_strip
                         d3W_dF[i][j][k][l][m][n]*(grad_u1[q_point])[i][j]*(grad_u1[q_point])[k][l]*(grad_u1[q_point])[m][n];
 
                     contrib_dEdlambda_u1u1 +=
-                        d3W_dF[i][j][k][l][m][n]*dF_dlambda[i][j]*(grad_u1[q_point])[k][l]*(grad_u1[q_point])[m][n];
+                        d3W_dF[i][j][k][l][m][n]*dF_dlambda[m][n]*(grad_u1[q_point])[i][j]*(grad_u1[q_point])[k][l];
                     for (unsigned int p=0; p<DIM; ++p)
                       for (unsigned int q=0; q<DIM; ++q)
                       {
@@ -689,14 +802,360 @@ namespace compressed_strip
 
                       }
                   }
+              }
 
         E_u1u1u1u1 += contrib_E_u1u1u1u1*fe_values.JxW(q_point);
         E_u2u1u1 += contrib_E_u2u1u1*fe_values.JxW(q_point);
         dEdlambda_u1u1 += contrib_dEdlambda_u1u1*fe_values.JxW(q_point);
 
+        E_u2u2 += contrib_E_u2u2*fe_values.JxW(q_point);
+
         E_u1u1u1 += contrib_E_u1u1u1*fe_values.JxW(q_point);
       }
     }
+
+    delta_lambda1 = -0.5*E_u1u1u1/dEdlambda_u1u1;
+    delta_lambda2 = -(1.0/3.0)*(E_u1u1u1u1 + 3.0*E_u2u1u1)/(dEdlambda_u1u1);
+
+    // now get the congateLambda2
+
+    delta_conguateLambda2 = 0.0;
+
+
+    // need to get d2lambda2_dlambdadlambda
+
+    double d2l2_dldl = 0.0;
+    double lambda12 = lambda1*lambda1;
+    double eta = a_nu;
+    double eta2 = eta*eta;
+    double phi = eta2 + 4.0*eta;
+    double a = 1.0 + eta*lambda12;
+    double a_inv = 1.0/a;
+    double b = phi*lambda12 + 4.0;
+    double bsqrt = sqrt(b);
+    double bsqrt_inv = 1.0/bsqrt;
+
+    d2l2_dldl = -3.0*eta2*lambda1*a_inv*a_inv + 4.0*eta2*eta*lambda12*lambda1*a_inv*a_inv*a_inv +
+        0.5*phi*bsqrt_inv*a_inv - 0.5*phi*phi*lambda12*a_inv*bsqrt_inv*bsqrt_inv*bsqrt_inv -
+        phi*eta*lambda12*bsqrt_inv*a_inv*a_inv - eta*bsqrt*a_inv*a_inv - eta*phi*lambda12*bsqrt_inv*a_inv*a_inv +
+        4.0*eta2*lambda12*bsqrt*a_inv*a_inv*a_inv;
+
+    Tensor<2, DIM> dF2_dlambda;
+    dF2_dlambda[0][0] = 0.0;
+    dF2_dlambda[0][1] = 0.0;
+    dF2_dlambda[1][0] = 0.0;
+    dF2_dlambda[1][1] = d2l2_dldl;
+
+
+    typename DoFHandler<DIM>::active_cell_iterator cell2 = dof_handler.begin_active(),
+                                                   endc2 = dof_handler.end();
+    for (; cell2!=endc2; ++cell2)
+    {
+
+      fe_values.reinit (cell2);
+
+      fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
+
+      nu.value_list (fe_values.get_quadrature_points(), nu_values);
+      mu->value_list     (fe_values.get_quadrature_points(), mu_values);
+
+//      get_grad_u1_value_list(fe_values.get_quadrature_points(), grad_u1);
+      get_grad_u2_value_list(fe_values.get_quadrature_points(), grad_u2);
+
+      for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+      {
+        Tensor<2,DIM> F = get_deformation_gradient(old_solution_gradients[q_point]);
+        Tensor<2, DIM> F_inv = invert(F);
+        double II_F = determinant(F);
+
+        Tensor<4,DIM> d2W_dF = nh.get_incremental_moduli_tensor(nu_values[q_point], mu_values[q_point], F_inv, II_F);
+//        Tensor<2,DIM> dW_dF = nh.get_piola_kirchoff_tensor(nu_values[q_point], mu_values[q_point], F, F_inv, II_F);
+
+        double tmp = 0.0;
+//        tmp +=  delta_lambda2*dW_dF[1][1]*dF2_dlambda[1][1];
+        for (unsigned int i=0; i<DIM; ++i)
+          for (unsigned int j=0; j<DIM; ++j)
+            for (unsigned int k=0; k<DIM; ++k)
+              for (unsigned int l=0; l<DIM; ++l)
+              {
+                tmp += d2W_dF[i][j][k][l]*dF_dlambda[i][j]*((grad_u2[q_point])[k][l] + 1.0*delta_lambda2*dF_dlambda[k][l]);
+              }
+
+
+
+        delta_conguateLambda2 += tmp*fe_values.JxW(q_point);
+
+      }
+
+    }
+
+    delta_conguateLambda2 += dEdlambda_u1u1;
+  }
+
+  void ElasticProblem::assemble_vexex_eq()
+   {
+     // Assembling the system rhs. I choose to make the rhs and system matrix assemblies separate,
+     // because we only do one at a time anyways in the newton method.
+
+
+    vexex_eq = 0.0;
+
+     QGauss<DIM>  quadrature_formula(10);
+
+     FEValues<DIM> fe_values (fe, quadrature_formula,
+                              update_values   | update_gradients |
+                              update_quadrature_points | update_JxW_values);
+
+     const unsigned int   dofs_per_cell = fe.dofs_per_cell;
+     const unsigned int   n_q_points    = quadrature_formula.size();
+
+     Vector<double>       cell_rhs (dofs_per_cell);
+
+     std::vector<std::vector<Tensor<1,DIM> > > old_solution_gradients(n_q_points, std::vector<Tensor<1,DIM>>(DIM));
+
+     std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
+
+     std::vector<double>     nu_values (n_q_points);
+     std::vector<double>     mu_values (n_q_points);
+
+     std::vector<Tensor<2, DIM>> grad_u1(n_q_points);
+     std::vector<Tensor<2, DIM>> grad_u2(n_q_points);
+
+
+     typename DoFHandler<DIM>::active_cell_iterator cell = dof_handler.begin_active(),
+                                                    endc = dof_handler.end();
+     for (; cell!=endc; ++cell)
+     {
+       cell_rhs = 0.0;
+
+       fe_values.reinit (cell);
+
+       fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
+
+       nu.value_list (fe_values.get_quadrature_points(), nu_values);
+       mu->value_list     (fe_values.get_quadrature_points(), mu_values);
+
+       get_grad_u1_value_list(fe_values.get_quadrature_points(), grad_u1);
+       get_grad_u2_value_list(fe_values.get_quadrature_points(), grad_u2);
+
+       for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+       {
+
+         Tensor<2,DIM> F = get_deformation_gradient(old_solution_gradients[q_point]);
+         Tensor<2, DIM> F_inv = invert(F);
+         double II_F = determinant(F);
+
+         Tensor<4,DIM> d2W_dF = nh.get_incremental_moduli_tensor(nu_values[q_point], mu_values[q_point], F_inv, II_F);
+         Tensor<6,DIM> d3W_dF = nh.get_d3W_dFdFdF(nu_values[q_point], mu_values[q_point], F_inv, II_F);
+
+         Tensor<2, DIM> to_contract_with_delta_grad_v;
+
+         for (unsigned int i=0; i<DIM; ++i)
+           for (unsigned int j=0; j<DIM; ++j)
+             for (unsigned int k=0; k<DIM; ++k)
+               for (unsigned int l=0; l<DIM; ++l)
+               {
+                 to_contract_with_delta_grad_v[i][j] += d2W_dF[k][l][i][j]*(grad_u2[q_point])[k][l];
+
+                 for (unsigned int m=0; m<DIM; ++m)
+                   for (unsigned int n=0; n<DIM; ++n)
+                   {
+                     to_contract_with_delta_grad_v[i][j] += d3W_dF[m][n][k][l][i][j]*(grad_u1[q_point])[k][l]*(grad_u1[q_point])[m][n];
+                   }
+               }
+
+         for (unsigned int q = 0; q < dofs_per_cell; ++q)
+         {
+           const unsigned int component_n = fe.system_to_component_index(q).first;
+
+           for(unsigned int p = 0; p<DIM; ++p)
+           {
+             cell_rhs(q) += to_contract_with_delta_grad_v[component_n][p]*(fe_values.shape_grad(q, q_point)[p])*fe_values.JxW(q_point);
+
+           }
+
+         }
+       }
+
+       cell->get_dof_indices (local_dof_indices);
+
+       for (unsigned int n=0; n<dofs_per_cell; ++n)
+         vexex_eq(local_dof_indices[n]) += cell_rhs(n);
+
+     }
+
+     double u1_dot_vexex_eq = 0.0;
+
+     std::vector<Vector<double>> solution_vals(n_q_points,
+                                               Vector<double>(DIM));
+
+     std::vector<Vector<double>> u1_1(n_q_points, Vector<double>(DIM));
+
+     typename DoFHandler<DIM>::active_cell_iterator cell2 = dof_handler.begin_active(),
+                                                  endc2 = dof_handler.end();
+     for (; cell2!=endc2; ++cell2)
+     {
+       fe_values.reinit (cell2);
+
+       fe_values.get_function_values(vexex_eq, solution_vals);
+
+       u1_value_list(fe_values.get_quadrature_points(), u1_1);
+
+       for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+       {
+         u1_dot_vexex_eq += solution_vals[q_point]*(u1_1[q_point])*fe_values.JxW(q_point);
+ //        u1u1 += (u1[q_point])*(u1[q_point])*fe_values.JxW(q_point);
+       }
+
+     }
+
+//     std::cout << "COWS : " << u1_dot_vexex_eq << "\n\n\n\n\n\n\n";
+
+     get_u1();
+     u1 *= u1_dot_vexex_eq;
+//     vexex_eq -= u1;
+
+     unsigned int number_dofs = dof_handler.n_dofs();
+
+      // get boundary 3 x2 dofs
+
+      std::vector<bool> x2_components = {false, true};
+      ComponentMask x2_mask(x2_components);
+
+      std::vector<bool> boundary_3_dof_x2(number_dofs, false);
+
+      std::set< types::boundary_id > boundary_id_3;
+      boundary_id_3.insert(3);
+
+      DoFTools::extract_boundary_dofs(dof_handler, x2_mask, boundary_3_dof_x2, boundary_id_3);
+
+      for(unsigned int i = 0; i < number_dofs; i++)
+      {
+//        if(boundary_3_dof_x2[i])
+//            vexex_eq[i] = 0.0;
+
+      }
+  }
+
+  void ElasticProblem::u1_value_list(const std::vector< Point< DIM > > &  points, std::vector<Vector<double>> & value_list)
+  {
+    for (unsigned int point_n = 0; point_n < points.size(); ++point_n)
+     {
+       Vector<double> tmp(2);
+       Vector<std::complex<double>> tmp_complex(2);
+       double x1 = points[point_n](0);
+       double x2 = points[point_n](1);
+
+       unsigned int t = 0;
+       if(x2 > L1)
+         t = 4;
+
+       for(unsigned int i = 0; i < 4; i++)
+       {
+         std::complex<double> Ae = A[i + t]*std::exp(alphas[i]*x2);
+         std::complex<double> AeB = Ae*B[i];
+
+         tmp_complex[0] += Ae;
+         tmp_complex[1] += AeB;
+
+       }
+
+       tmp[0] = -sin(w_c*x1)*(tmp_complex[0]).real();
+       tmp[1] = cos(w_c*x1)*(tmp_complex[1]).real();
+
+       value_list[point_n] = tmp;
+     }
+  }
+
+  void ElasticProblem::get_u1()
+  {
+    unsigned int number_dofs = dof_handler.n_dofs();
+
+    // get the coords of the dofs
+    std::vector<Point<DIM>> support_points(number_dofs);
+    MappingQ1<DIM> mapping;
+    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
+
+    std::vector<bool> x1_components = {true, false};
+    ComponentMask x1_mask(x1_components);
+
+    std::vector<bool> is_x1_comp(number_dofs, false);
+
+    DoFTools::extract_dofs(dof_handler, x1_mask, is_x1_comp);
+
+    for(unsigned int i = 0; i < number_dofs; i++)
+    {
+      double x1 = support_points[i](0);
+      double x2 = support_points[i](1);
+
+      unsigned int t = 0;
+      if(x2 > L1)
+        t = 4;
+
+      double currentVal = 0.0;
+      for(unsigned int i = 0; i < 4; i++)
+      {
+        std::complex<double> Ae = A[i + t]*std::exp(alphas[i]*x2);
+        std::complex<double> AeB = Ae*B[i];
+
+        if(is_x1_comp[i])
+          currentVal += (Ae).real();
+        else
+          currentVal += (AeB).real();
+
+      }
+
+      if(is_x1_comp[i])
+        u1[i] = -sin(w_c*x1)*currentVal;
+      else
+        u1[i] = cos(w_c*x1)*currentVal;
+    }
+
+  }
+
+  void ElasticProblem::output_results (const unsigned int cycle) const
+  {
+
+    std::vector<std::string> solution_names;
+    switch (DIM)
+      {
+      case 1:
+        solution_names.push_back ("displacement");
+        break;
+      case 2:
+        solution_names.push_back ("x1_displacement");
+        solution_names.push_back ("x2_displacement");
+        break;
+      case 3:
+        solution_names.push_back ("x1_displacement");
+        solution_names.push_back ("x2_displacement");
+        solution_names.push_back ("x3_displacement");
+        break;
+      default:
+        Assert (false, ExcNotImplemented());
+        break;
+      }
+    // Now output the displacements from uniform solution
+     std::string filename1("output");
+     filename1 += "/vexex_eq";
+
+     // see if the directory exists...
+     struct stat st;
+     if (stat(filename1.c_str(), &st) == -1)
+       mkdir(filename1.c_str(), 0700);
+
+     filename1 += "/vexex_eq-";
+     filename1 += std::to_string(cycle);
+     filename1 += ".vtk";
+     std::ofstream output_vexex_eq (filename1.c_str());
+
+     DataOut<DIM> data_out_vexex_eq;
+
+     data_out_vexex_eq.attach_dof_handler (dof_handler);
+
+     data_out_vexex_eq.add_data_vector (vexex_eq, solution_names);
+     data_out_vexex_eq.build_patches ();
+     data_out_vexex_eq.write_vtk (output_vexex_eq);
 
   }
 
@@ -740,10 +1199,10 @@ namespace compressed_strip
       }
 
       // append the number of unit cells used to the directory name
-      char num_cells_str[MAXLINE];
-      sprintf(num_cells_str, "%u", number_unit_cells);
-      strcat(directory_name, "_");
-      strcat(directory_name, num_cells_str);
+//      char num_cells_str[MAXLINE];
+//      sprintf(num_cells_str, "%u", number_unit_cells);
+//      strcat(directory_name, "_");
+//      strcat(directory_name, num_cells_str);
 
       sprintf(output_directory, "output/");
       strcat(output_directory, directory_name);
@@ -771,25 +1230,73 @@ namespace compressed_strip
       grid_dimensions[0] *= number_unit_cells;
 
       // read in exponential growth parameter and possibly the l1 value
-      double l1;
+
+      double val1;
+      double val2;
+      double val3;
+      double nuVal;
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%lg %lg", &kappa, &l1);
-      if(valuesWritten < 1)
+      valuesWritten = sscanf(nextLine, "%lg %lg %lg", &val1, &val2, &val3);
+      if(valuesWritten < 1 || (valuesWritten == 1 && val1 < 1.0))
       {
         fileReadErrorFlag = true;
         goto fileClose;
       }
-      else if (valuesWritten == 2)
+      else if ((valuesWritten == 1) && val1 > 1.0)
       {
-        L1 = l1;
-        pieceConstFlag = true;
-        mu = new MuFunction(kappa, l1);
-      }
-      else
-      {
-        pieceConstFlag = false;
+        // treat as just a kappa value
+        kappa = val1;
         L1 = 1.1;
+        nuVal = NU_VALUE;
+
+        pieceConstFlag = false;
+
         mu = new MuFunction(kappa);
+
+        std::cout << "Using Exponential mu with: k = " << kappa << ", nu = " << nuVal << std::endl;
+      }
+      else if((valuesWritten == 2) && val1 < 1.0)
+      {
+        // treat as nu and a kappa
+        nuVal = val1;
+        kappa = val2;
+        L1 = 1.1;
+
+        pieceConstFlag = false;
+
+        mu = new MuFunction(kappa);
+        nu.set_nu_value(nuVal);
+
+        std::cout << "Using Exponential mu with: k = " << kappa << ", nu = " << nuVal << std::endl;
+
+      }
+      else if((valuesWritten == 2) && val1 >= 1.0)
+      {
+        // treat as a kappa and a l1
+        kappa = val1;
+        L1 = val2;
+        nuVal = NU_VALUE;
+
+        pieceConstFlag = true;
+
+        mu = new MuFunction(kappa, L1);
+
+        std::cout << "Using Piecewise Constant mu with: k = " << kappa << ", L1 = " << L1 << ", nu = " << nuVal << std::endl;
+
+      }
+      else if(valuesWritten == 3)
+      {
+        // treat as a nu, kappa, and l1
+        nuVal = val1;
+        kappa = val2;
+        L1 = val3;
+
+        pieceConstFlag = true;
+
+        mu = new MuFunction(kappa, L1);
+        nu.set_nu_value(nuVal);
+
+        std::cout << "Using Piecewise Constant mu with: k = " << kappa << ", L1 = " << L1 << ", nu = " << nuVal << std::endl;
       }
 
 
@@ -1013,6 +1520,9 @@ namespace compressed_strip
     L_tensor = nh.get_incremental_moduli_tensor(NU_VALUE, 1.0, F_inv, II_F);
     M_tensor = nh.get_d3W_dFdFdF(NU_VALUE, 1.0, F_inv, II_F);
 
+
+//    grid_dimensions[0] = 20;
+//    grid_dimensions[1] = 20;
 
     // make the output directory
     struct stat st;
