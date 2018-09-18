@@ -1,0 +1,38 @@
+# this is an example input file for the CompressedStrip code.
+# Blank lines and ones starting with '#' are ignored.
+
+# output file name prefix
+nonUniform_5_0
+
+# number unit cells:
+# unsigned int
+1
+
+# Dimensions of grids in x1 and x2 of each unit cell, and value if the mesh is nonuniform
+# (1 for non-uniform, 0 otherwise. default is 0), respectfully:
+# unsigned int     unsigned int     unsigned int
+8 8 1
+
+# Absolute tolerance on the l2 norm of the residual for the newton iteration:
+# double
+1e-8 150
+
+# exponential growth parameter kappa:
+# double
+5.0
+
+# critical load:
+# double
+0.112832
+
+# critical frequency:
+# double
+1.4
+
+# ds and load steps:
+# double     unsigned int
+0.003 1500
+
+# output every n steps:
+# unsigned int
+50
