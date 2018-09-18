@@ -36,7 +36,7 @@ int main (int argc, char** argv)
   double lambda_c = ep.bisect_find_lambda_critical(ep.critical_lambda_analytical - 0.05,
                                                ep.critical_lambda_analytical + 0.05, 1e-6, 50);
 
-  std::cout << "The lambda_c is: " << lambda_c << std::endl;
+  std::cout << std::setprecision (16) << "The lambda_c is: " << lambda_c << std::endl;
 
   ep.set_present_lambda(0.0);
   ep.newton_iterate();
@@ -114,7 +114,7 @@ int main (int argc, char** argv)
    if ((i > 10 && num_negative_eigs == (prev_num_negative_eigs + 1)))
    {
      std::cout << "\n Eigenvalue Crossing Found. Outputting current state and stopping" << std::endl;
-//     break;
+     break;
    }
   }
   ep.output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude, 1);

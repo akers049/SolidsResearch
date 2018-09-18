@@ -7,6 +7,8 @@
 
 CMAKE_MINIMUM_REQUIRED(VERSION 2.8.8)
 
+set(QMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -Wno-deprecated")
+
 FIND_PACKAGE(deal.II 8.5.0 QUIET
   HINTS ${deal.II_DIR} ${DEAL_II_DIR} ../ ../../ $ENV{DEAL_II_DIR}
   )
@@ -33,7 +35,12 @@ DEAL_II_SETUP_TARGET(CompressedStripPacaBloch)
 ADD_LIBRARY(Constituitive ${CMAKE_SOURCE_DIR}/source/Constituitive.cc)
 DEAL_II_SETUP_TARGET(Constituitive)
 
+# ADD_LIBRARY(mapping_q_eulerian_hp ${CMAKE_SOURCE_DIR}/include/mapping_q_eulerian_hp.h)
+# DEAL_II_SETUP_TARGET(mapping_q_eulerian_hp)
+
 TARGET_LINK_LIBRARIES(CompressedStripPacaBloch Constituitive)
+# TARGET_LINK_LIBRARIES(CompressedStripPacaBloch mapping_q_eulerian_hp)
+
 
 # ADD_EXECUTABLE(paca_to_first_bif_instability ${CMAKE_SOURCE_DIR}/source/paca_to_first_bif_instability.cc $<TARGET_OBJECTS:CompressedStripPacaBloch>)
 
@@ -56,6 +63,10 @@ TARGET_LINK_LIBRARIES(find_first_bif_load CompressedStripPacaBloch)
 ADD_EXECUTABLE(bloch_eigs_branch ${CMAKE_SOURCE_DIR}/source/bloch_eigs_branch.cc)
 DEAL_II_SETUP_TARGET(bloch_eigs_branch)
 TARGET_LINK_LIBRARIES(bloch_eigs_branch CompressedStripPacaBloch)
+
+ADD_EXECUTABLE(compare_solutions ${CMAKE_SOURCE_DIR}/source/compare_solutions.cc)
+DEAL_II_SETUP_TARGET(compare_solutions)
+TARGET_LINK_LIBRARIES(compare_solutions CompressedStripPacaBloch)
 
 
 # Define a distclean target to remove every generated file:

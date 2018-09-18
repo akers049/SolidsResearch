@@ -2,8 +2,9 @@
 #include <fstream>
 
 using namespace dealii;
-int main ()
+int main (int argc, char** argv)
 {
+  Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
   compressed_strip::ElasticProblem ep;
 
@@ -37,7 +38,7 @@ int main ()
 
   ep.set_unstable_eigenvector_as_initial_tangent(number_negative_eigs);
 
-  ep.initial_lambda_tangent = 0.0;
+  ep.initial_lambda_tangent = 0.4;
   double scalingVal = sqrt(1 - ep.initial_lambda_tangent*ep.initial_lambda_tangent);
   ep.initial_solution_tangent *= -scalingVal;
 
@@ -49,8 +50,9 @@ int main ()
   previous_solution = ep.present_solution;
 
   ep.path_follow_PACA_iterate(&(ep.initial_solution_tangent), ep.initial_lambda_tangent, ep.get_ds());
+  std::cout << std::setprecision(15) << "    lambda = " << ep.get_present_lambda() << std::endl;
 
-  // trying something
+//   trying something
 //  if (ep.get_number_unit_cells()%2 == 0)
 //  {
 //    ep.initial_solution_tangent = ep.present_solution;

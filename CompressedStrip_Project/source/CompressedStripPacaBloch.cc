@@ -21,8 +21,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
-
-
+#include "mapping_q_eulerian_hp.h"
 
 
 #define MU_VALUE 1.0
@@ -88,6 +87,20 @@ namespace compressed_strip
       values[i] = MuFunction::value(points[i], component);
   }
 
+  double FE_solution::value (const Point<DIM>  &p,
+                             const unsigned int  component) const
+  {
+    // this is a scalar function, so make sure component is zero...
+    Assert (component == 0 || component == 1, ExcNotImplemented());
+    Assert (p.dimension == 2, ExcNotImplemented())
+
+    // Put your function for nu. p(0) is x1 value, p(1) is the x2 value
+    Vector<double> value(2);
+    VectorTools::point_value(*dof_handler_ptr, *present_solution, p, value);
+
+    return value(component);
+  }
+
 
 
   // computes right hand side values if we were to have body forces. But it just
@@ -107,6 +120,7 @@ namespace compressed_strip
       values[point_n][1] = 0.0;
     }
   }
+
 
   // Functions that get the tensors used in the stiffness and rhs calculations.
 
@@ -128,9 +142,10 @@ namespace compressed_strip
 
   ElasticProblem::ElasticProblem ()
     :
-    dof_handler (triangulation),
-    fe (FE_Q<DIM>(2), DIM)
-  {}
+    dof_handler (triangulation)
+  {
+
+  }
 
 
 
@@ -139,6 +154,8 @@ namespace compressed_strip
   {
     dof_handler.clear ();
     delete mu;
+    if(FE_solution_function != NULL)
+      delete FE_solution_function;
   }
 
 
@@ -153,34 +170,60 @@ namespace compressed_strip
     corner2(1) =  domain_dimensions[1];
     GridGenerator::subdivided_hyper_rectangle (triangulation, grid_dimensions, corner1, corner2, true);
 
-
-
-    if (nonUniform_mesh_flag)
+    typename hp::DoFHandler<DIM>::active_cell_iterator
+    cell1 = dof_handler.begin_active(),
+    endc1 = dof_handler.end();
+    for (; cell1!=endc1; ++cell1)
     {
-      // Now we will refine this mesh
-      const int numSections = 2;
-      for (int i = 0 ; i < numSections; i ++)
+      cell1->set_active_fe_index(section_FE_id[0]);
+    }
+
+
+    // Now we will refine this mesh
+    const int numSections = number_sections - 1;
+    for (int i = 0 ; i < numSections; i ++)
+    {
+      double section_x2 = (0.5/numSections)*i + 0.5;
+      typename hp::DoFHandler<DIM>::active_cell_iterator
+      cell = dof_handler.begin_active(),
+      endc = dof_handler.end();
+      for (; cell!=endc; ++cell)
       {
-        double section_x2 = (0.5/numSections)*i + 0.5;
-        Triangulation<2>::active_cell_iterator cell = triangulation.begin_active();
-        Triangulation<2>::active_cell_iterator endc = triangulation.end();
-        for (; cell!=endc; ++cell)
-        {
-          for (unsigned int v=0;
-               v < GeometryInfo<2>::vertices_per_cell;
-               ++v)
-            {
-              const double x2_pos = (cell->vertex(v))(1);
-              if ( x2_pos > section_x2)
-                {
-                  cell->set_refine_flag ();
-                  break;
-                }
-            }
-        }
-        triangulation.execute_coarsening_and_refinement ();
+        for (unsigned int v=0;
+             v < GeometryInfo<2>::vertices_per_cell;
+             ++v)
+          {
+            const double x2_pos = (cell->vertex(v))(1);
+            if ( x2_pos > section_x2)
+              {
+//                  cell->set_active_fe_index(cell->active_fe_index() + 1);
+                cell->set_refine_flag ();
+                break;
+              }
+          }
+      }
+      triangulation.execute_coarsening_and_refinement ();
+
+      typename hp::DoFHandler<DIM>::active_cell_iterator
+      cell2 = dof_handler.begin_active(),
+      endc2 = dof_handler.end();
+      for (; cell2!=endc2; ++cell2)
+      {
+        for (unsigned int v=0;
+             v < GeometryInfo<2>::vertices_per_cell;
+             ++v)
+          {
+            const double x2_pos = (cell2->vertex(v))(1);
+            if ( x2_pos > section_x2)
+              {
+                cell2->set_active_fe_index(section_FE_id[i + 1]);
+//                  cell->set_refine_flag ();
+                break;
+              }
+          }
       }
     }
+
 
     // Make sure to renumber the boundaries
     renumber_boundary_ids();
@@ -197,7 +240,7 @@ namespace compressed_strip
     if (fileLoadFlag == false)
     {
 
-      dof_handler.distribute_dofs (fe);
+      dof_handler.distribute_dofs (fe_collection);
       present_solution.reinit (dof_handler.n_dofs());
     }
 
@@ -250,6 +293,9 @@ namespace compressed_strip
 
   void ElasticProblem::make_periodicity_constraints()
   {
+    const FiniteElement<DIM, DIM> &fe = dof_handler.begin_active()->get_fe();
+    (void)fe;
+
 
     const unsigned int   number_dofs = dof_handler.n_dofs();
 
@@ -283,8 +329,7 @@ namespace compressed_strip
 
     // get the coords of the dofs
     std::vector<Point<DIM>> support_points(number_dofs);
-    MappingQ1<DIM> mapping;
-    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
+    map_dofs_to_support_points(dof_handler, support_points);
 
     for(unsigned int i = 0; i < number_dofs; i++)
     {
@@ -406,8 +451,7 @@ namespace compressed_strip
 
     // get the coords of the dofs
     std::vector<Point<DIM>> support_points(number_dofs);
-    MappingQ1<DIM> mapping;
-    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
+    map_dofs_to_support_points(dof_handler, support_points);
 
     matched_dofs.resize(number_dofs, -1);
     for(unsigned int i = 0; i < number_dofs; i++)
@@ -495,12 +539,14 @@ namespace compressed_strip
     // this follows the dealii make_sparsity_pattern routine closely.
     DynamicSparsityPattern dsp_bloch(2*number_dofs, 2*number_dofs);
 
-    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
-    std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
-    typename DoFHandler<DIM>::active_cell_iterator cell = dof_handler.begin_active(),
-                                                   endc = dof_handler.end();
+    std::vector<types::global_dof_index> local_dof_indices;
+    typename hp::DoFHandler<DIM>::active_cell_iterator
+    cell = dof_handler.begin_active(),
+    endc = dof_handler.end();
     for (; cell!=endc; ++cell)
     {
+      unsigned int dofs_per_cell = cell->get_fe().dofs_per_cell;
+      local_dof_indices.resize(dofs_per_cell);
       cell->get_dof_indices (local_dof_indices);
       constraints_bloch.add_entries_local_to_global (local_dof_indices,
                                                             dsp_bloch,
@@ -584,8 +630,7 @@ namespace compressed_strip
 
     // get the coords of the dofs
     std::vector<Point<DIM>> support_points(number_dofs);
-    MappingQ1<DIM> mapping;
-    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
+    map_dofs_to_support_points(dof_handler, support_points);
 
     for(unsigned int i = 0; i < number_dofs; i ++)
     {
@@ -747,36 +792,42 @@ namespace compressed_strip
 
     system_matrix = 0.0;
 
-    QGauss<1> quad_x(n_qpoints_x);
-    QGauss<1> quad_y(n_qpoints_y);
-
-    QAnisotropic<DIM> quadrature_formula(quad_x, quad_y);
+//    QGauss<1> quad_x(n_qpoints_x);
+//    QGauss<1> quad_y(n_qpoints_y);
+//
+//    QAnisotropic<DIM> quadrature_formula(quad_x, quad_y);
 
 //    QGauss<DIM>  quadrature_formula(1);
 
-    FEValues<DIM> fe_values (fe, quadrature_formula,
+    hp::FEValues<DIM> hp_fe_values (fe_collection, quadrature_collection,
                              update_values   | update_gradients |
                              update_quadrature_points | update_JxW_values);
 
-    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
-    const unsigned int   n_q_points    = quadrature_formula.size();
+//    const unsigned int   n_q_points    = quadrature_formula.size();
 
-    FullMatrix<double>   cell_matrix (dofs_per_cell, dofs_per_cell);
+    FullMatrix<double>   cell_matrix;
 
-    std::vector<std::vector<Tensor<1,DIM> > > old_solution_gradients(n_q_points, std::vector<Tensor<1,DIM>>(DIM));
 
-    std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
+    std::vector<types::global_dof_index> local_dof_indices;
 
-    std::vector<double>     nu_values (n_q_points);
-    std::vector<double>     mu_values (n_q_points);
 
-    typename DoFHandler<DIM>::active_cell_iterator cell = dof_handler.begin_active(),
-                                                   endc = dof_handler.end();
+    typename hp::DoFHandler<DIM>::active_cell_iterator
+    cell = dof_handler.begin_active(),
+    endc = dof_handler.end();
     for (; cell!=endc; ++cell)
     {
+      unsigned int dofs_per_cell = cell->get_fe().dofs_per_cell;
+      cell_matrix.reinit(dofs_per_cell, dofs_per_cell);
       cell_matrix = 0.0;
 
-      fe_values.reinit (cell);
+      hp_fe_values.reinit (cell);
+      const FEValues<DIM> &fe_values = hp_fe_values.get_present_fe_values();
+      unsigned int n_q_points = fe_values.n_quadrature_points;
+
+      std::vector<double>     nu_values(n_q_points);
+      std::vector<double>     mu_values(n_q_points);
+
+      std::vector<std::vector<Tensor<1,DIM> > > old_solution_gradients(n_q_points, std::vector<Tensor<1,DIM>>(DIM));
 
       fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
 
@@ -796,11 +847,11 @@ namespace compressed_strip
 
         for (unsigned int n = 0; n < dofs_per_cell; ++n)
         {
-          const unsigned int component_n = fe.system_to_component_index(n).first;
+          const unsigned int component_n = cell->get_fe().system_to_component_index(n).first;
 
           for (unsigned int m = 0; m < dofs_per_cell; ++m)
           {
-            const unsigned int component_m = fe.system_to_component_index(m).first;
+            const unsigned int component_m = cell->get_fe().system_to_component_index(m).first;
 
             for (unsigned int j=0; j<DIM; ++j)
               for (unsigned int l=0; l<DIM; ++l)
@@ -812,7 +863,7 @@ namespace compressed_strip
           }
         }
       }
-
+      local_dof_indices.resize(dofs_per_cell);
       cell->get_dof_indices (local_dof_indices);
 
       for (unsigned int n=0; n<dofs_per_cell; ++n)
@@ -832,46 +883,40 @@ namespace compressed_strip
 
     system_rhs = 0.0;
 
-    QGauss<1> quad_x(n_qpoints_x);
-    QGauss<1> quad_y(n_qpoints_y);
-
-    QAnisotropic<DIM> quadrature_formula(quad_x, quad_y);
-
-
-//    QGauss<DIM>  quadrature_formula(1);
-
-    FEValues<DIM> fe_values (fe, quadrature_formula,
+    hp::FEValues<DIM> hp_fe_values (fe_collection, quadrature_collection,
                              update_values   | update_gradients |
                              update_quadrature_points | update_JxW_values);
 
-    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
-    const unsigned int   n_q_points    = quadrature_formula.size();
 
-    Vector<double>       cell_rhs (dofs_per_cell);
+    Vector<double>       cell_rhs;
 
-    std::vector<std::vector<Tensor<1,DIM> > > old_solution_gradients(n_q_points, std::vector<Tensor<1,DIM>>(DIM));
+    std::vector<types::global_dof_index> local_dof_indices;
 
-    std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
 
-    std::vector<double>     nu_values (n_q_points);
-    std::vector<double>     mu_values (n_q_points);
-
-    std::vector<Tensor<1, DIM> > rhs_values (n_q_points);
-
-    typename DoFHandler<DIM>::active_cell_iterator cell = dof_handler.begin_active(),
-                                                   endc = dof_handler.end();
+    typename hp::DoFHandler<DIM>::active_cell_iterator
+    cell = dof_handler.begin_active(),
+    endc = dof_handler.end();
     for (; cell!=endc; ++cell)
     {
+      unsigned int dofs_per_cell = cell->get_fe().dofs_per_cell;
+      cell_rhs.reinit(dofs_per_cell);
       cell_rhs = 0.0;
 
-      fe_values.reinit (cell);
+      hp_fe_values.reinit (cell);
+      const FEValues<DIM> &fe_values = hp_fe_values.get_present_fe_values();
+      unsigned int n_q_points = fe_values.n_quadrature_points;
+      std::vector<Tensor<1, DIM> > rhs_values (n_q_points);
+
+      std::vector<double>     nu_values (n_q_points);
+      std::vector<double>     mu_values (n_q_points);
+
+      std::vector<std::vector<Tensor<1,DIM> > > old_solution_gradients(n_q_points, std::vector<Tensor<1,DIM>>(DIM));
 
       fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
 
       nu.value_list (fe_values.get_quadrature_points(), nu_values);
       mu->value_list     (fe_values.get_quadrature_points(), mu_values);
       right_hand_side (fe_values.get_quadrature_points(), rhs_values);
-
 
       for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
       {
@@ -884,7 +929,7 @@ namespace compressed_strip
                                                         F, F_inv, II_F);
         for (unsigned int n = 0; n < dofs_per_cell; ++n)
         {
-          const unsigned int component_n = fe.system_to_component_index(n).first;
+          const unsigned int component_n = cell->get_fe().system_to_component_index(n).first;
 
           for(unsigned int j = 0; j<DIM; ++j)
           {
@@ -894,7 +939,7 @@ namespace compressed_strip
           cell_rhs(n) += fe_values.shape_value(n, q_point)*rhs_values[q_point][component_n]*fe_values.JxW(q_point);
         }
       }
-
+      local_dof_indices.resize(dofs_per_cell);
       cell->get_dof_indices (local_dof_indices);
 
       for (unsigned int n=0; n<dofs_per_cell; ++n)
@@ -913,37 +958,28 @@ namespace compressed_strip
     system_energy = 0.0;
     congugate_lambda = 0.0;
 
-    QGauss<1> quad_x(n_qpoints_x);
-    QGauss<1> quad_y(n_qpoints_y);
-
-    QAnisotropic<DIM> quadrature_formula(quad_x, quad_y);
-
-
-//    QGauss<DIM>  quadrature_formula(1);
-
-    FEValues<DIM> fe_values (fe, quadrature_formula,
+    hp::FEValues<DIM> hp_fe_values (fe_collection, quadrature_collection,
                              update_values   | update_gradients |
                              update_quadrature_points | update_JxW_values);
 
-    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
-    const unsigned int   n_q_points    = quadrature_formula.size();
+    std::vector<types::global_dof_index> local_dof_indices;
 
-
-    std::vector<std::vector<Tensor<1,DIM> > > old_solution_gradients(n_q_points,
-                                                std::vector<Tensor<1,DIM>>(DIM));
-
-    std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
-
-    std::vector<double>     nu_values (n_q_points);
-    std::vector<double>     mu_values (n_q_points);
-
-    std::vector<Tensor<1, DIM> > rhs_values (n_q_points);
-
-    typename DoFHandler<DIM>::active_cell_iterator cell = dof_handler.begin_active(),
-                                                   endc = dof_handler.end();
+    typename hp::DoFHandler<DIM>::active_cell_iterator
+    cell = dof_handler.begin_active(),
+    endc = dof_handler.end();
     for (; cell!=endc; ++cell)
     {
-      fe_values.reinit (cell);
+      hp_fe_values.reinit (cell);
+      const FEValues<DIM> &fe_values = hp_fe_values.get_present_fe_values();
+      unsigned int n_q_points = fe_values.n_quadrature_points;
+
+      std::vector<Tensor<1, DIM> > rhs_values (n_q_points);
+
+      std::vector<double>     nu_values (n_q_points);
+      std::vector<double>     mu_values (n_q_points);
+
+      std::vector<std::vector<Tensor<1,DIM> > > old_solution_gradients(n_q_points,
+                                                  std::vector<Tensor<1,DIM>>(DIM));
 
       fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
 
@@ -992,33 +1028,16 @@ namespace compressed_strip
 
     drhs_dlambda = 0.0;
 
-    QGauss<1> quad_x(n_qpoints_x);
-    QGauss<1> quad_y(n_qpoints_y);
-
-    QAnisotropic<DIM> quadrature_formula(quad_x, quad_y);
-
-
-//    QGauss<DIM>  quadrature_formula(1);
-
-    FEValues<DIM> fe_values (fe, quadrature_formula,
+    hp::FEValues<DIM> hp_fe_values (fe_collection, quadrature_collection,
                              update_values   | update_gradients |
                              update_quadrature_points | update_JxW_values);
 
-    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
-    const unsigned int   n_q_points    = quadrature_formula.size();
 
-    Vector<double>       cell_drhs_dlambda (dofs_per_cell);
+    Vector<double>       cell_drhs_dlambda;
 
-    std::vector<std::vector<Tensor<1,DIM> > > old_solution_gradients(n_q_points,
-                                                std::vector<Tensor<1,DIM>>(DIM));
+    std::vector<types::global_dof_index> local_dof_indices;
 
-    std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
 
-    std::vector<double>     nu_values (n_q_points);
-    std::vector<double>     mu_values (n_q_points);
-
-    typename DoFHandler<DIM>::active_cell_iterator cell = dof_handler.begin_active(),
-                                                   endc = dof_handler.end();
 
 
     // construct the dF_dlambda
@@ -1033,16 +1052,28 @@ namespace compressed_strip
     double term4 = -sqrt(a_nu*a_nu*lambda1*lambda1 + 4.0 *a_nu*lambda1*lambda1 + 4.0)*4.0*a_nu*lambda1;
     dlambda2_dlambda = -(term1 + term2 + term3 + term4)/(4.0*(1 + a_nu*lambda1*lambda1)*(1 + a_nu*lambda1*lambda1));
 
+    typename hp::DoFHandler<DIM>::active_cell_iterator
+    cell = dof_handler.begin_active(),
+    endc = dof_handler.end();
     for (; cell!=endc; ++cell)
     {
+      unsigned int dofs_per_cell = cell->get_fe().dofs_per_cell;
+      cell_drhs_dlambda.reinit(dofs_per_cell);
       cell_drhs_dlambda = 0.0;
-      fe_values.reinit (cell);
+
+      hp_fe_values.reinit (cell);
+      const FEValues<DIM> &fe_values = hp_fe_values.get_present_fe_values();
+      unsigned int n_q_points = fe_values.n_quadrature_points;
+
+      std::vector<double>     nu_values (n_q_points);
+      std::vector<double>     mu_values (n_q_points);
+
+       std::vector<std::vector<Tensor<1,DIM> > > old_solution_gradients(n_q_points, std::vector<Tensor<1,DIM>>(DIM));
 
       fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
 
       nu.value_list (fe_values.get_quadrature_points(), nu_values);
       mu->value_list     (fe_values.get_quadrature_points(), mu_values);
-
 
       for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
       {
@@ -1062,7 +1093,7 @@ namespace compressed_strip
 
         for (unsigned int n = 0; n < dofs_per_cell; ++n)
         {
-          const unsigned int component_n = fe.system_to_component_index(n).first;
+          const unsigned int component_n = cell->get_fe().system_to_component_index(n).first;
 
           for(unsigned int j = 0; j<DIM; ++j)
           {
@@ -1070,7 +1101,7 @@ namespace compressed_strip
           }
         }
       }
-
+      local_dof_indices.resize(dofs_per_cell);
       cell->get_dof_indices (local_dof_indices);
 
       for (unsigned int n=0; n<dofs_per_cell; ++n)
@@ -1105,28 +1136,25 @@ namespace compressed_strip
 
     u1u1 = 0.0;
     excee = 0.0;
-    QGauss<DIM>  quadrature_formula(10);
 
-    FEValues<DIM> fe_values (fe, quadrature_formula,
-                           update_values   | update_gradients |
-                           update_quadrature_points | update_JxW_values);
-
-    const unsigned int   dofs_per_cell = fe.dofs_per_cell;
-    const unsigned int   n_q_points    = quadrature_formula.size();
+    hp::FEValues<DIM> hp_fe_values (fe_collection, quadrature_collection,
+                             update_values   | update_gradients |
+                             update_quadrature_points | update_JxW_values);
 
 
-    std::vector<Vector<double>> solution_vals(n_q_points,
-                                              Vector<double>(DIM));
-
-    std::vector<Vector<double>> u1(n_q_points, Vector<double>(DIM));
-
-    std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
-
-    typename DoFHandler<DIM>::active_cell_iterator cell = dof_handler.begin_active(),
-                                                 endc = dof_handler.end();
+    typename hp::DoFHandler<DIM>::active_cell_iterator
+    cell = dof_handler.begin_active(),
+    endc = dof_handler.end();
     for (; cell!=endc; ++cell)
     {
-      fe_values.reinit (cell);
+      hp_fe_values.reinit (cell, last_q_index);
+      const FEValues<DIM> &fe_values = hp_fe_values.get_present_fe_values();
+      unsigned int n_q_points = fe_values.n_quadrature_points;
+
+      std::vector<Vector<double>> solution_vals(n_q_points,
+                                                Vector<double>(DIM));
+
+      std::vector<Vector<double>> u1(n_q_points, Vector<double>(DIM));
 
       fe_values.get_function_values(present_solution, solution_vals);
 
@@ -1917,8 +1945,7 @@ namespace compressed_strip
     // This can be accomplished by makeing sure the x_2 component of the initial tangent
     // is negatice at x_1 = 0, x_2 = 1
     std::vector<Point<DIM>> support_points(number_dofs);
-    MappingQ1<DIM> mapping;
-    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
+    map_dofs_to_support_points(dof_handler, support_points);
 
     std::vector<bool> x2_components = {false, true};
     ComponentMask x2_mask(x2_components);
@@ -1936,6 +1963,8 @@ namespace compressed_strip
         foundFlag = true;
         if (initial_solution_tangent[i] > 0.0)
           initial_solution_tangent *= -1.0;
+
+        break;
       }
     }
 
@@ -1976,7 +2005,7 @@ namespace compressed_strip
     return middleVal;
   }
 
-  void ElasticProblem::output_results (const unsigned int cycle) const
+  void ElasticProblem::output_results (const unsigned int cycle)
   {
 
     std::vector<std::string> solution_names;
@@ -2015,7 +2044,7 @@ namespace compressed_strip
     filename0 += ".vtk";
     std::ofstream output_totalDisp (filename0.c_str());
 
-    DataOut<DIM> data_out_totalDisp;
+    DataOut<DIM, hp::DoFHandler<DIM>> data_out_totalDisp;
 
     data_out_totalDisp.attach_dof_handler (dof_handler);
 
@@ -2023,8 +2052,7 @@ namespace compressed_strip
     // Get the total displacement of each of the points.
     // Get the points of the dofs so we can do some shifting...
     std::vector<Point<DIM>> support_points(dof_handler.n_dofs());
-    MappingQ1<DIM> mapping;
-    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
+    map_dofs_to_support_points(dof_handler, support_points);
 
     const unsigned int   number_dofs = dof_handler.n_dofs();
 
@@ -2052,7 +2080,7 @@ namespace compressed_strip
     }
 
     data_out_totalDisp.add_data_vector (shifted_solution, solution_names);
-    data_out_totalDisp.build_patches ();
+    data_out_totalDisp.build_patches (max_degree);
     data_out_totalDisp.write_vtk (output_totalDisp);
 
 
@@ -2070,24 +2098,24 @@ namespace compressed_strip
     filename1 += ".vtk";
     std::ofstream output_disp_from_uniform (filename1.c_str());
 
-    DataOut<DIM> data_out_disp_from_uniform;
+    DataOut<DIM, hp::DoFHandler<DIM>> data_out_disp_from_uniform;
 
     data_out_disp_from_uniform.attach_dof_handler (dof_handler);
 
     data_out_disp_from_uniform.add_data_vector (present_solution, solution_names);
-    data_out_disp_from_uniform.build_patches ();
+    data_out_disp_from_uniform.build_patches (max_degree);
     data_out_disp_from_uniform.write_vtk (output_disp_from_uniform);
 
     // Now output the deformed mesh
 
     // just need to shift the corrdinates of the verticies by the shifted solution vector
 
-    DataOut<DIM> deformed_data_out;
+    DataOut<DIM, hp::DoFHandler<DIM>> deformed_data_out;
 
     deformed_data_out.attach_dof_handler(dof_handler);
     deformed_data_out.add_data_vector(shifted_solution, solution_names);
-
-    MappingQEulerian<DIM> q_mapping(1,  dof_handler, shifted_solution);
+    hp::MappingCollection<DIM, DIM> mapping;
+    MappingQEulerian_hp<DIM> q_mapping(1,  dof_handler, shifted_solution);
     deformed_data_out.build_patches(q_mapping, 1);
 
     std::string filename2(output_directory);
@@ -2165,6 +2193,8 @@ namespace compressed_strip
     }
     else
     {
+      std::vector<unsigned int>::iterator last;
+
       // Read in the output name
       char directory_name[MAXLINE];
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
@@ -2174,6 +2204,62 @@ namespace compressed_strip
         fileReadErrorFlag = true;
         goto fileClose;
       }
+
+      // Read in the number of sections
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      valuesWritten = sscanf(nextLine, "%u", &number_sections);
+      if (valuesWritten != 1)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+
+      // Read in the polynomial degree of each section
+      section_polynomial_degrees.clear();
+      unsigned int next_polynomial_degree;
+      unsigned int values_count; values_count = 0;
+      char* nextValueChar;
+      getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
+      nextValueChar = strtok(nextLine, ", \t");
+      for(unsigned int i = 0; i < number_sections; i++)
+      {
+        valuesWritten = sscanf(nextValueChar, "%u", &next_polynomial_degree);
+        if (valuesWritten != 1)
+        {
+          fileReadErrorFlag = true;
+          goto fileClose;
+        }
+
+        section_polynomial_degrees.push_back(next_polynomial_degree);
+        values_count++;
+
+        nextValueChar = strtok(NULL, ", \t");
+        if(nextValueChar == NULL)
+          break;
+      }
+      if(values_count != number_sections)
+      {
+        fileReadErrorFlag = true;
+        goto fileClose;
+      }
+      // now find unique values and stuff
+      FE_id_polynomial_degree = section_polynomial_degrees;
+      last = std::unique(FE_id_polynomial_degree.begin(), FE_id_polynomial_degree.end());
+      FE_id_polynomial_degree.erase(last, FE_id_polynomial_degree.end());
+      section_FE_id.clear();
+      section_FE_id.resize(section_polynomial_degrees.size());
+      for(unsigned int i = 0; i < section_polynomial_degrees.size(); i ++)
+      {
+        for(unsigned int j = 0; j < FE_id_polynomial_degree.size(); j++)
+        {
+          if(section_polynomial_degrees[i] == FE_id_polynomial_degree[j])
+          {
+            section_FE_id[i] = j;
+            break;
+          }
+        }
+      }
+      max_degree = *std::max_element(FE_id_polynomial_degree.begin(), FE_id_polynomial_degree.end());
 
       // Read in the number of unit cells
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
@@ -2194,24 +2280,13 @@ namespace compressed_strip
       strcat(output_directory, directory_name);
 
       // Read in the grid dimensions
-      unsigned int nonUniformFlag;
-      nonUniformFlag = 0;
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%u %u %u", &grid_dimensions[0], &grid_dimensions[1], &nonUniformFlag);
-      if(valuesWritten < 2)
+      valuesWritten = sscanf(nextLine, "%u %u", &grid_dimensions[0], &grid_dimensions[1]);
+      if(valuesWritten != 2)
       {
         fileReadErrorFlag = true;
         goto fileClose;
       }
-      else if(valuesWritten == 3)
-      {
-        if(nonUniformFlag == 1)
-          nonUniform_mesh_flag = true;
-        else
-          nonUniform_mesh_flag = false;
-      }
-      else
-        nonUniform_mesh_flag = false;
 
       grid_dimensions[0] *= number_unit_cells;
 
@@ -2357,6 +2432,31 @@ namespace compressed_strip
     if (stat(output_directory, &st) == -1)
       mkdir(output_directory, 0700);
 
+
+    init_fe_and_quad_collection();
+
+  }
+
+  void ElasticProblem::init_fe_and_quad_collection()
+  {
+    for(unsigned int i = 0; i < FE_id_polynomial_degree.size(); i++)
+    {
+      unsigned int next_degree = FE_id_polynomial_degree[i];
+      fe_collection.push_back(FESystem<DIM>(FE_Q<DIM>(next_degree), DIM));
+      if(next_degree == 1)
+      {
+        QGauss<1> quad_x(1);
+        QGauss<1> quad_y(2);
+        QAnisotropic<DIM> quadrature_formula_reduced(quad_x, quad_y);
+        quadrature_collection.push_back(quadrature_formula_reduced);
+      }
+      else
+        quadrature_collection.push_back(QGauss<DIM>(next_degree + 1));
+
+    }
+    quadrature_collection.push_back(QGauss<DIM>(10));
+
+    last_q_index = FE_id_polynomial_degree.size();
   }
 
   void ElasticProblem::read_asymptotic_input_file(char* filename)
@@ -2406,24 +2506,14 @@ namespace compressed_strip
       }
 
       // Read in the grid dimensions
-      unsigned int nonUniformFlag;
-      nonUniformFlag = 0;
       getNextDataLine(fid, nextLine, MAXLINE, &endOfFileFlag);
-      valuesWritten = sscanf(nextLine, "%u %u %u", &dummy, &dummy1, &nonUniformFlag);
-      if(valuesWritten < 2)
+      valuesWritten = sscanf(nextLine, "%u %u", &dummy, &dummy1);
+      if(valuesWritten != 2)
       {
         fileReadErrorFlag = true;
         goto fileClose;
       }
-      else if(valuesWritten == 3)
-      {
-        if(nonUniformFlag == 1)
-          nonUniform_mesh_flag = true;
-        else
-          nonUniform_mesh_flag = false;
-      }
-      else
-        nonUniform_mesh_flag = false;
+
 
       grid_dimensions[0] *= number_unit_cells;
 
@@ -2688,7 +2778,7 @@ namespace compressed_strip
     triangulation.load(triag_ar, 1);
 
     // df_handler
-    dof_handler.distribute_dofs(fe);
+    dof_handler.distribute_dofs(fe_collection);
     char dof_file[MAXLINE];
     strcpy(dof_file, input_dir_path);
     strcat(dof_file, "/dof_");
@@ -2794,8 +2884,8 @@ namespace compressed_strip
 
     // get the coords of the dofs
     std::vector<Point<DIM>> support_points(number_dofs);
-    MappingQ1<DIM> mapping;
-    DoFTools::map_dofs_to_support_points(mapping, dof_handler, support_points);
+
+    map_dofs_to_support_points(dof_handler, support_points);
 
     std::vector<bool> x2_components = {false, true};
     ComponentMask x2_mask(x2_components);
@@ -2813,6 +2903,63 @@ namespace compressed_strip
 
   }
 
+
+  void
+  ElasticProblem::map_dofs_to_support_points (const hp::DoFHandler<DIM, DIM>  &dof_handler, std::vector<Point<DIM> > &support_points)
+  {
+    const unsigned int dim = DIM;
+    const unsigned int spacedim = DIM;
+
+    hp::FECollection<dim, spacedim> fe_collection(dof_handler.get_fe());
+    hp::QCollection<dim> q_coll_dummy;
+
+    for (unsigned int fe_index = 0; fe_index < fe_collection.size(); ++fe_index)
+      {
+        // check whether every fe in the collection has support points
+        Assert(fe_collection[fe_index].has_support_points(),
+               typename FiniteElement<dim>::ExcFEHasNoSupportPoints());
+        q_coll_dummy.push_back(
+          Quadrature<dim> (
+            fe_collection[fe_index].get_unit_support_points()));
+      }
+
+    // Now loop over all cells and enquire the support points on each
+    // of these. we use dummy quadrature formulas where the quadrature
+    // points are located at the unit support points to enquire the
+    // location of the support points in real space.
+    //
+    // The weights of the quadrature rule have been set to invalid
+    // values by the used constructor.
+    MappingQ1<DIM> mapping;
+    hp::MappingCollection<DIM, DIM> mapping1(mapping);
+    hp::FEValues<dim, spacedim> hp_fe_values(mapping1, fe_collection,
+                                             q_coll_dummy, update_quadrature_points);
+    typename hp::DoFHandler<dim, spacedim>::active_cell_iterator
+      cell = dof_handler.begin_active(), endc = dof_handler.end();
+
+    std::vector<types::global_dof_index> local_dof_indices;
+    for (; cell != endc; ++cell)
+      // only work on locally relevant cells
+      if (cell->is_artificial() == false)
+        {
+          hp_fe_values.reinit(cell);
+          const FEValues<dim, spacedim> &fe_values = hp_fe_values.get_present_fe_values();
+
+          local_dof_indices.resize(cell->get_fe().dofs_per_cell);
+          cell->get_dof_indices(local_dof_indices);
+
+          const std::vector<Point<spacedim> > &points =
+            fe_values.get_quadrature_points();
+          for (unsigned int i = 0; i < cell->get_fe().dofs_per_cell; ++i)
+            // insert the values into the map
+            support_points[local_dof_indices[i]] = points[i];
+        }
+  }
+
 }
+
+
+
+
 
 #endif // COMPRESSEDSTRIPPACABLOCH_CC_

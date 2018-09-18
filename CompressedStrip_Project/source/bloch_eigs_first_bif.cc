@@ -56,7 +56,7 @@ int main (int argc, char** argv)
   double lambda_c = ep.bisect_find_lambda_critical(ep.critical_lambda_analytical - 0.05,
                                                ep.critical_lambda_analytical + 0.05, 1e-6, 50);
 
-  std::cout << "The lambda_c is: " << lambda_c << std::endl;
+  std::cout << std::setprecision (16)  << "The lambda_c is: " << lambda_c << std::endl;
 
   double wall0 = get_wall_time();
 

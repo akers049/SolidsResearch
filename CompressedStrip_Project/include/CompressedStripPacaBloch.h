@@ -53,7 +53,9 @@
 #include <deal.II/lac/lapack_full_matrix.h>
 #include <deal.II/lac/arpack_solver.h>
 
-
+#include <deal.II/hp/dof_handler.h>
+#include <deal.II/hp/fe_values.h>
+#include <deal.II/fe/fe_series.h>
 
 #include <deal.II/lac/trilinos_sparse_matrix.h>
 
@@ -66,6 +68,7 @@
 #include <boost/archive/text_iarchive.hpp>
 
 #include "Constituitive.h"
+#include "mapping_q_eulerian_hp.h"
 
 
 #define MAXLINE 1024
@@ -147,6 +150,29 @@ namespace compressed_strip
 
    };
 
+  class FE_solution : public Function<DIM>
+  {
+  public:
+    FE_solution(hp::DoFHandler<DIM, DIM>& dof_handler,
+                Vector<double>& solution) : Function<DIM>(DIM)
+    {
+      dof_handler_ptr = &dof_handler;
+      present_solution = &solution;
+    }
+
+    virtual ~FE_solution(){}
+
+    virtual double value (const Point<DIM> &p,
+                          const unsigned int  component) const;
+
+    void reinit_solution(Vector<double>& solution)
+    {
+      present_solution = &solution;
+    }
+
+    hp::DoFHandler<DIM, DIM> *dof_handler_ptr;
+    Vector<double> *present_solution;
+  };
 
   /****  ElasticProblem  *****
    * This is the primary class used, with all the dealii stuff
@@ -178,7 +204,7 @@ namespace compressed_strip
 
     double bisect_find_lambda_critical(double lowerBound, double upperBound,
                                       double tol, unsigned int maxIter);
-    void output_results(const unsigned int cycle) const;
+    void output_results(const unsigned int cycle);
     void output_load_info(std::vector<double> lambda_values,
                          std::vector<double> energy_values,
                          std::vector<double> congugate_lambda_values,
@@ -195,6 +221,12 @@ namespace compressed_strip
     void set_boundary_values();
     void print_dof_coords_and_vals(unsigned int indx);
 
+    void interpolate_solution(FE_solution* solution_func_ptr)
+    {
+      VectorTools::interpolate(dof_handler, *solution_func_ptr, present_solution);
+      constraints.distribute(present_solution);
+    }
+
     // get methods for important constants
     double get_present_lambda(){return present_lambda;};
     void set_present_lambda(double lambda_val)
@@ -209,8 +241,14 @@ namespace compressed_strip
     unsigned int get_n_dofs(){return dof_handler.n_dofs();};
     unsigned int get_number_active_cells(){return triangulation.n_active_cells();};
     unsigned int get_number_unit_cells(){return number_unit_cells;};
+    FE_solution* get_fe_solution_function_ptr()
+    {
+      FE_solution_function = new FE_solution(dof_handler, present_solution);
+      return FE_solution_function;
+    }
 
-    Vector<double>       present_solution;
+
+    dealii::Vector<double>       present_solution;
     Vector<double>       evaluation_point;
     Vector<double>       initial_solution_tangent;
     double               initial_lambda_tangent = 0.0;
@@ -227,6 +265,8 @@ namespace compressed_strip
 
 
   private:
+    void init_fe_and_quad_collection();
+
     Tensor<2,DIM> get_deformation_gradient(std::vector<Tensor<1,DIM> > old_solution_gradient);
 
     void setup_system_constraints();
@@ -259,15 +299,19 @@ namespace compressed_strip
     void getNextDataLine( FILE* const filePtr, char* nextLinePtr,
                             int const maxSize, int* const endOfFileFlag);
 
+    void   map_dofs_to_support_points (const hp::DoFHandler<DIM, DIM>  &dof_handler, std::vector<Point<DIM> > &support_points);
+
 
 
     void renumber_boundary_ids();
 
 
     Triangulation<DIM,DIM>   triangulation;
-    DoFHandler<DIM>      dof_handler;
+    hp::DoFHandler<DIM, DIM>      dof_handler;
+    hp::FECollection<DIM, DIM>    fe_collection;
+    hp::QCollection<DIM>     quadrature_collection;
 
-    FESystem<DIM>        fe;
+    unsigned int last_q_index = 0;
 
     ConstraintMatrix     constraints;
     ConstraintMatrix     constraints_bloch;
@@ -315,7 +359,12 @@ namespace compressed_strip
     unsigned int number_unit_cells = 1;
     unsigned int n_qpoints_x = 3;
     unsigned int n_qpoints_y = 3;
+    unsigned int number_sections = 0;
+    std::vector<unsigned int> section_polynomial_degrees;
+    std::vector<unsigned int> section_FE_id;
+    std::vector<unsigned int> FE_id_polynomial_degree;
 
+    unsigned int max_degree = 0;
 
     bool fileLoadFlag = false;
 
@@ -331,6 +380,7 @@ namespace compressed_strip
 
     NuFunction nu;
     MuFunction *mu = NULL;
+    FE_solution *FE_solution_function = NULL;
 
     bool bloch_matched_flag = false;
     std::vector<int> bloch_boundry_1_dof_index;
