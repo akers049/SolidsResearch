@@ -29,19 +29,19 @@ DEAL_II_INITIALIZE_CACHED_VARIABLES()
   )
 
 
-ADD_LIBRARY(CompressedStripPacaBloch  ${CMAKE_SOURCE_DIR}/source/CompressedStripPacaBloch.cc)
-DEAL_II_SETUP_TARGET(CompressedStripPacaBloch)
+ADD_LIBRARY(CompressedStrip_asymptotics  ${CMAKE_SOURCE_DIR}/source/CompressedStrip_asymptotics.cc)
+DEAL_II_SETUP_TARGET(CompressedStrip_asymptotics)
 
 ADD_LIBRARY(Constituitive ${CMAKE_SOURCE_DIR}/../source/Constituitive.cc)
 DEAL_II_SETUP_TARGET(Constituitive)
 
-TARGET_LINK_LIBRARIES(CompressedStripPacaBloch Constituitive)
+TARGET_LINK_LIBRARIES(CompressedStrip_asymptotics Constituitive)
 
 # ADD_EXECUTABLE(paca_to_first_bif_instability ${CMAKE_SOURCE_DIR}/source/paca_to_first_bif_instability.cc $<TARGET_OBJECTS:CompressedStripPacaBloch>)
 
-ADD_EXECUTABLE(find_first_bif_load ${CMAKE_SOURCE_DIR}/source/find_first_bif_load.cc)
-DEAL_II_SETUP_TARGET(find_first_bif_load)
-TARGET_LINK_LIBRARIES(find_first_bif_load CompressedStripPacaBloch)
+ADD_EXECUTABLE(first_bif_asymptotics ${CMAKE_SOURCE_DIR}/source/first_bif_asymptotics.cc)
+DEAL_II_SETUP_TARGET(first_bif_asymptotics)
+TARGET_LINK_LIBRARIES(first_bif_asymptotics CompressedStrip_asymptotics)
 
 
 # Define a distclean target to remove every generated file:

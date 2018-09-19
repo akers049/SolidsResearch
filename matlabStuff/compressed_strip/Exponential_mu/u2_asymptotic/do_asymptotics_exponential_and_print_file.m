@@ -142,7 +142,7 @@ alphas = sort(alphas_roots);
 %    detVal = 1;
 %    return;
 % end
-alphas
+% alphas
 % now can solve for B's:
 B = zeros(4, 1);
 for i = 1:4

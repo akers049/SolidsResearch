@@ -238,7 +238,7 @@ o = fopen(['/home/andrew/dealii/SolidsResearch/CompressedStrip_Project/asymptoti
 fprintf(o, '#INPUT FILE FOR PIECEWISE CONSTANT mu\n');
 fprintf(o, 'piecewiseConstant_mu\n');
 fprintf(o, '1\n');
-fprintf(o, '15 15\n');;
+fprintf(o, '15 15\n');
 fprintf(o, '%f %f %f\n', PD.nu, PD.k, PD.L1);
 fprintf(o, '%f\n', PD.lambda_c);
 fprintf(o, '%f\n', PD.w_c);

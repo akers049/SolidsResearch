@@ -8,7 +8,7 @@ TEST_PACA_TEST_REDUCED_NEW
 1
 
 # Dimensions of grids in x1 and x2 of each unit cell, respectfully: unsigned int     unsigned int
-10 10 1
+8 8 1
 
 # Absolute tolerance on the l2 norm of the residual for the newton iteration: double
 1e-8 150
