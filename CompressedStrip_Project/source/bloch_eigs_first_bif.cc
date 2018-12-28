@@ -100,7 +100,7 @@ int main (int argc, char** argv)
 
   ep.set_present_lambda(lambda_start - 1e-6);
 
-  ep.path_follow_PACA_iterate(&(ep.initial_solution_tangent), ep.initial_lambda_tangent, ep.get_ds());
+  ep.path_follow_PACA_iterate((ep.initial_solution_tangent), ep.initial_lambda_tangent, ep.get_ds());
   ep.output_results (2);
 
   // define variables for the tangent to next start point.
@@ -143,8 +143,13 @@ int main (int argc, char** argv)
     previous_lambda = ep.get_present_lambda();
     previous_solution = ep.present_solution;
 
-    ep.path_follow_PACA_iterate(&(solution_tangent), lambda_tangent, ep.get_ds());
+    ep.path_follow_PACA_iterate((solution_tangent), lambda_tangent, ep.get_ds());
     std::cout << std::setprecision(15) << "    Lambda = " << ep.get_present_lambda() << std::endl;
+
+    if ((i % ep.get_output_every()) == 0)
+    {
+      ep.output_results(i/ep.get_output_every() + 10000);
+    }
 
 
     // get energy and congugate lambda value and save them.

@@ -9,8 +9,10 @@
 
 
 using namespace dealii;
-int main ()
+int main (int argc, char** argv)
 {
+
+  Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
   compressed_strip::ElasticProblem ep;
 
@@ -45,14 +47,14 @@ int main ()
 
   ep.set_unstable_eigenvector_as_initial_tangent(number_negative_eigs);
 
-  ep.initial_lambda_tangent = 0.0;
+  ep.initial_lambda_tangent = 0.1;
   double scalingVal = sqrt(1 - ep.initial_lambda_tangent*ep.initial_lambda_tangent);
   ep.initial_solution_tangent *= 1.0*scalingVal;
 
   double previous_lambda = ep.get_present_lambda();
   previous_solution = ep.present_solution;
 
-  ep.path_follow_PACA_iterate(&(ep.initial_solution_tangent), ep.initial_lambda_tangent, ep.get_ds());
+  ep.path_follow_PACA_iterate((ep.initial_solution_tangent), ep.initial_lambda_tangent, ep.get_ds());
 
   // define variables for the tangent to next start point.
   Vector<double> solution_tangent;
@@ -71,12 +73,12 @@ int main ()
   for(unsigned int i = 1; i < ep.get_load_steps(); i ++)
   {
     std::cout << "    Step Number : " << i << std::endl;
-    if(i%30 == 0)
+    if(i%ep.get_output_every() == 0)
     {
-      for(unsigned int j = 49; j < 50; j++)
+      for(unsigned int j = 0; j < 50; j++)
       {
         double wave_ratio = j*0.01;
-        double lowestEig = ep.get_bloch_eigenvalues(j, i/ep.get_output_every(), wave_ratio, 0, (j == 0 ? true : false));
+        double lowestEig = ep.get_bloch_eigenvalues(j, i/ep.get_output_every(), wave_ratio, state_index, (j == 0 ? true : false));
 
         if(lowestEig < -1e-6)
           current_stability = false;
@@ -98,9 +100,14 @@ int main ()
     previous_lambda = ep.get_present_lambda();
     previous_solution = ep.present_solution;
 
-    ep.path_follow_PACA_iterate(&(solution_tangent), lambda_tangent, ep.get_ds());
+    ep.path_follow_PACA_iterate((solution_tangent), lambda_tangent, ep.get_ds());
     std::cout << std::setprecision(15) << "    Lambda = " << ep.get_present_lambda() << std::endl;
     std::cout << "     Stable : " << current_stability << std::endl;
+
+    if ((i % ep.get_output_every()) == 0)
+    {
+      ep.output_results(i/ep.get_output_every() + state_index*10000);
+    }
 
 
     // get energy and congugate lambda value and save them.

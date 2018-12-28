@@ -19,7 +19,7 @@ int main (int argc, char** argv)
 
   std::cout << "Please enter an asymptotic input file: " << std::endl;
   std::cin >> fileName;
-  ep.read_asymptotic_input_file(fileName);
+  bool asymptotic_yes = ep.read_asymptotic_input_file(fileName);
 
   std::cout << "\n   Number of active cells:       "
             << ep.get_number_active_cells()
@@ -39,8 +39,8 @@ int main (int argc, char** argv)
   std::cout << std::setprecision (16) << "The lambda_c is: " << lambda_c << std::endl;
 
   ep.set_present_lambda(0.0);
-  ep.newton_iterate();
   ep.output_results (0);
+  ep.newton_iterate(false);
   ep.assemble_system_energy_and_congugate_lambda();
 
   std::vector<double> lambda_values;
@@ -50,7 +50,7 @@ int main (int argc, char** argv)
 
   double lambda_start = lambda_c + 1e-5;
   ep.set_present_lambda(lambda_start);
-  ep.newton_iterate();
+  ep.newton_iterate(false);
   ep.output_results (1);
 
   // set the eigenvector for the unstable mode
@@ -60,7 +60,7 @@ int main (int argc, char** argv)
   double previous_lambda = lambda_start;
 
 
-  ep.path_follow_PACA_iterate( &(ep.initial_solution_tangent), ep.initial_lambda_tangent, ep.get_ds());
+  ep.path_follow_PACA_iterate( (ep.initial_solution_tangent), ep.initial_lambda_tangent, ep.get_ds());
   ep.output_results (2);
 
   // define variables for the tangent to next start point.
@@ -72,6 +72,7 @@ int main (int argc, char** argv)
   unsigned int prev_num_negative_eigs = 0;
   unsigned int step_number = 0;
 
+  bool eig_crossing = false;
   for(unsigned int i = 1; i < ep.get_load_steps(); i ++)
   {
 
@@ -89,13 +90,13 @@ int main (int argc, char** argv)
    previous_lambda = ep.get_present_lambda();
    previous_solution = ep.present_solution;
 
-   ep.path_follow_PACA_iterate(&(solution_tangent), lambda_tangent, ep.get_ds());
+   ep.path_follow_PACA_iterate(solution_tangent, lambda_tangent, ep.get_ds());
    std::cout << std::setprecision(15) << "    lambda = " << ep.get_present_lambda() << std::endl;
 
    if ((i % ep.get_output_every()) == 0)
    {
       ep.output_results(i/ep.get_output_every() + 2);
-   // ep.get_system_eigenvalues(ep.present_lambda, i/ep.get_output_every());
+//      ep.get_system_eigenvalues(ep.present_lambda, i/ep.get_output_every());
    }
 
    // get energy and congugate lambda value and save them.
@@ -104,20 +105,45 @@ int main (int argc, char** argv)
    congugate_lambda_values.push_back(ep.congugate_lambda/ep.get_number_unit_cells());
    energy_values.push_back(ep.system_energy/ep.get_number_unit_cells());
 //   displacement_magnitude.push_back(ep.present_solution.l2_norm()/(sqrt(1.0*ep.get_number_unit_cells())));
-   displacement_magnitude.push_back(ep.get_first_bif_amplitude());
+   if(asymptotic_yes)
+     displacement_magnitude.push_back(ep.get_first_bif_amplitude());
+   else
+     displacement_magnitude.push_back(ep.present_solution.l2_norm()/(sqrt(1.0*ep.get_number_unit_cells())));
 
    prev_num_negative_eigs = num_negative_eigs;
 
-   num_negative_eigs = ep.get_system_eigenvalues(ep.get_present_lambda(), i);
+//   num_negative_eigs = ep.get_system_eigenvalues(ep.get_present_lambda(), i);
    std::cout << "    Number negative Eigenvalues : " << num_negative_eigs << std::endl;
    std::cout << "    Step Number : " << step_number << std::endl;
    if ((i > 10 && num_negative_eigs == (prev_num_negative_eigs + 1)))
    {
      std::cout << "\n Eigenvalue Crossing Found. Outputting current state and stopping" << std::endl;
+     eig_crossing = true;
      break;
    }
   }
   ep.output_load_info(lambda_values, energy_values, congugate_lambda_values, displacement_magnitude, 1);
+
+  if(eig_crossing)
+  {
+    lambda_c = ep.bisect_find_lambda_critical(previous_lambda,
+                                              ep.get_present_lambda(), 1e-6, 50, true);
+    lambda_start = lambda_c + 1e-6;
+    ep.set_present_lambda(lambda_start);
+    ep.newton_iterate();
+    std::cout << std::setprecision (16) << "The lambda_c is: " << lambda_c << std::endl;
+
+    unsigned int number_negative_eigs = ep.get_system_eigenvalues(ep.get_present_lambda(), -1);
+    ep.set_unstable_eigenvector_as_initial_tangent(number_negative_eigs);
+    ep.initial_lambda_tangent = 0.0;
+
+  }
+  else
+  {
+    ep.initial_solution_tangent = ep.present_solution;
+    ep.initial_solution_tangent -= previous_solution;
+    ep.initial_lambda_tangent = ep.get_present_lambda() - previous_lambda;
+  }
 
   ep.save_current_state(1);
 

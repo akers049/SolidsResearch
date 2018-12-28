@@ -23,6 +23,8 @@
 #include <sys/time.h>
 #include "mapping_q_eulerian_hp.h"
 
+//#include "mapping_q_eulerian_hp.h"
+
 
 #define MU_VALUE 1.0
 #define NU_VALUE 0.33
@@ -71,7 +73,7 @@ namespace compressed_strip
     double muValue;
     if (pieceConstFlag == true)
     {
-      muValue = (p(1) >= L1 ? kappa : mu0 );
+      muValue = (p(1) > L1 ? kappa : mu0 );
     }
     else
       muValue = mu0*exp(kappa*p(1));
@@ -98,10 +100,91 @@ namespace compressed_strip
     Vector<double> value(2);
     VectorTools::point_value(*dof_handler_ptr, *present_solution, p, value);
 
-    return value(component);
+    if(zero_flag)
+      return 0.0;
+    else
+      return value(component);
   }
 
+  void Compute_PK2_stresses_postprocess::evaluate_vector_field(const DataPostprocessorInputs::Vector< DIM > &   input_data,
+                                                               std::vector< Vector< double > > &   computed_quantities) const
+  {
+    unsigned int n_q_points = input_data.solution_values.size();
 
+    std::vector<double>     nu_values(n_q_points, nu->value(Point<DIM>(0.0, 0.0), 0));
+    std::vector<double>     mu_values(n_q_points);
+
+    typename hp::DoFHandler<DIM>::cell_iterator cell = input_data.template get_cell<hp::DoFHandler<DIM>>();
+    if(cell->material_id() == '1')
+      std::fill(mu_values.begin(), mu_values.end(), mu->value(Point<DIM>(0.0, 1.0), 0));
+    else
+      std::fill(mu_values.begin(), mu_values.end(), mu->value(Point<DIM>(0.0, 0.0), 0));
+
+//    nu->value_list (input_data.evaluation_points, nu_values);
+//    mu->value_list (input_data.evaluation_points, mu_values);
+
+    for(unsigned int i = 0; i < n_q_points; i++)
+    {
+      Tensor<2,DIM> F = get_deformation_gradient(input_data.solution_gradients[i]);
+      Tensor<2, DIM> F_inv = invert(F);
+      double II_F = determinant(F);
+
+
+
+      Tensor<2,DIM> PK1 = nh->get_piola_kirchoff_tensor(nu_values[i], mu_values[i],
+                                                            F, F_inv, II_F);
+      Tensor<2, DIM> PK2 = F_inv*PK1;
+//      Tensor<2, DIM> PK2 = PK1;
+
+      computed_quantities[i][0] = PK2[0][0];
+      computed_quantities[i][1] = PK2[1][1];
+
+    }
+  }
+
+  std::vector<std::string> Compute_PK2_stresses_postprocess::get_names() const
+  {
+    std::vector<std::string> output_names;
+    output_names.push_back("PK2_11");
+    output_names.push_back("PK2_22");
+
+    return output_names;
+  }
+
+  UpdateFlags Compute_PK2_stresses_postprocess::get_needed_update_flags() const
+  {
+    return update_values | update_gradients | update_quadrature_points;
+
+//    return update_gradients;
+  }
+
+  std::vector<DataComponentInterpretation::DataComponentInterpretation> Compute_PK2_stresses_postprocess::get_data_component_interpretation () const
+  {
+    std::vector<DataComponentInterpretation::DataComponentInterpretation> interpretation (DIM);
+    interpretation[0] = DataComponentInterpretation::component_is_scalar;
+    interpretation[1] = DataComponentInterpretation::component_is_scalar;
+
+    return interpretation;
+  }
+
+  inline
+  Tensor<2,DIM>
+  Compute_PK2_stresses_postprocess::get_deformation_gradient(std::vector<Tensor<1,DIM> > old_solution_gradient) const
+  {
+    Tensor<2,DIM> tmp;
+
+    for (unsigned int i = 0; i < DIM; i ++)
+      for(unsigned int j = 0; j < DIM; j++)
+      {
+        tmp[i][j] = -old_solution_gradient[i][j];
+
+        if(i == j)
+          tmp[i][j] += 1.0;
+      }
+
+
+    return invert(tmp)*F0;
+  }
 
   // computes right hand side values if we were to have body forces. But it just
   // always returns zeros because we don't.
@@ -120,6 +203,7 @@ namespace compressed_strip
       values[point_n][1] = 0.0;
     }
   }
+
 
 
   // Functions that get the tensors used in the stiffness and rhs calculations.
@@ -156,6 +240,12 @@ namespace compressed_strip
     delete mu;
     if(FE_solution_function != NULL)
       delete FE_solution_function;
+
+    if(FE_tangent_function != NULL)
+      delete FE_tangent_function;
+
+    if(postprocess != NULL)
+      delete postprocess;
   }
 
 
@@ -189,19 +279,14 @@ namespace compressed_strip
       endc = dof_handler.end();
       for (; cell!=endc; ++cell)
       {
-        for (unsigned int v=0;
-             v < GeometryInfo<2>::vertices_per_cell;
-             ++v)
-          {
-            const double x2_pos = (cell->vertex(v))(1);
-            if ( x2_pos > section_x2)
-              {
+        const double x2_pos = (cell->center())(1);
+        if ( x2_pos > section_x2)
+        {
 //                  cell->set_active_fe_index(cell->active_fe_index() + 1);
-                cell->set_refine_flag ();
-                break;
-              }
-          }
+          cell->set_refine_flag ();
+        }
       }
+
       triangulation.execute_coarsening_and_refinement ();
 
       typename hp::DoFHandler<DIM>::active_cell_iterator
@@ -209,19 +294,26 @@ namespace compressed_strip
       endc2 = dof_handler.end();
       for (; cell2!=endc2; ++cell2)
       {
-        for (unsigned int v=0;
-             v < GeometryInfo<2>::vertices_per_cell;
-             ++v)
-          {
-            const double x2_pos = (cell2->vertex(v))(1);
-            if ( x2_pos > section_x2)
-              {
-                cell2->set_active_fe_index(section_FE_id[i + 1]);
+        const double x2_pos = (cell2->center())(1);
+        if ( x2_pos > section_x2)
+        {
+          cell2->set_active_fe_index(section_FE_id[i + 1]);
 //                  cell->set_refine_flag ();
-                break;
-              }
-          }
+        }
       }
+    }
+
+    typename hp::DoFHandler<DIM>::active_cell_iterator
+    cell3 = dof_handler.begin_active(),
+    endc3 = dof_handler.end();
+    for (; cell3!=endc3; ++cell3)
+    {
+      const double x2_pos = (cell3->center())(1);
+      if(x2_pos >= L1)
+        cell3->set_material_id('1');
+      else
+        cell3->set_material_id('0');
+
     }
 
 
@@ -230,14 +322,46 @@ namespace compressed_strip
 
   }
 
-  void ElasticProblem::setup_system ()
+  void ElasticProblem::renumber_boundary_ids()
+  {
+
+    // renumber boundary ids because they have problems being saved for nonuniform mesh.
+    typename Triangulation<DIM>::active_cell_iterator cell =
+     triangulation.begin_active(), endc = triangulation.end();
+    for (; cell != endc; ++cell)
+      for (unsigned int f = 0; f < GeometryInfo<DIM>::faces_per_cell; ++f)
+      {
+
+        const Point<DIM> face_center = cell->face(f)->center();
+        if (fabs(face_center[0] + domain_dimensions[0]/2.0) < 1e-4)  // left
+        {
+          cell->face(f)->set_boundary_id (1);
+        }
+        else if (fabs(face_center[0] - domain_dimensions[0]/2.0) < 1e-4)
+        {// right
+          cell->face(f)->set_boundary_id (2);
+        }
+        else if (fabs(face_center[1]) < 1e-6) //bottom
+        {
+          cell->face(f)->set_boundary_id (3);
+        }
+        else if (fabs(face_center[1] - 1.0) < 1e-6) //top
+        {
+         cell->face(f)->set_boundary_id (4);
+
+        }
+
+      }
+  }
+
+  void ElasticProblem::setup_system (bool initFlag)
   {
     // Sets up system. Makes the constraint matrix, and reinitializes the
     // vectors and matricies used throughout to be the proper size.
 
     // only reinit the present solution if it wasn't already loaded in
     // Also, only distribute the dofs if it hasn't been done so already.
-    if (fileLoadFlag == false)
+    if (fileLoadFlag == false || initFlag == false)
     {
 
       dof_handler.distribute_dofs (fe_collection);
@@ -251,6 +375,9 @@ namespace compressed_strip
     newton_update.reinit(number_dofs);
     system_rhs.reinit (number_dofs);
     drhs_dlambda.reinit (number_dofs);
+    PK2_stresses_11.reinit(get_number_active_cells());
+    PK2_stresses_22.reinit(get_number_active_cells());
+
 
     DynamicSparsityPattern dsp(dof_handler.n_dofs(), dof_handler.n_dofs());
     DoFTools::make_sparsity_pattern(dof_handler,
@@ -266,6 +393,9 @@ namespace compressed_strip
     setup_bloch();
 
     evaluation_point = present_solution;
+
+    if (initFlag == true)
+      postprocess = new Compute_PK2_stresses_postprocess(mu, &nu, &nh);
 
   }
 
@@ -349,7 +479,7 @@ namespace compressed_strip
         }
         if(foundFlag == false)
         {
-          std::cout << "could not find match for boundary 0 dof " << i << " Exiting." << std::endl;
+          std::cout << "could not find match for boundary 1 dof " << i <<  " located at ("<<  support_points[i](0)<<  ","<<  support_points[i](1)<< ") Exiting." << std::endl;
           exit(-1);
         }
       }
@@ -1068,12 +1198,12 @@ namespace compressed_strip
       std::vector<double>     nu_values (n_q_points);
       std::vector<double>     mu_values (n_q_points);
 
-       std::vector<std::vector<Tensor<1,DIM> > > old_solution_gradients(n_q_points, std::vector<Tensor<1,DIM>>(DIM));
+      std::vector<std::vector<Tensor<1,DIM> > > old_solution_gradients(n_q_points, std::vector<Tensor<1,DIM>>(DIM));
 
       fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
 
       nu.value_list (fe_values.get_quadrature_points(), nu_values);
-      mu->value_list     (fe_values.get_quadrature_points(), mu_values);
+      mu->value_list (fe_values.get_quadrature_points(), mu_values);
 
       for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
       {
@@ -1109,6 +1239,51 @@ namespace compressed_strip
     }
 
     constraints.condense (drhs_dlambda);
+  }
+
+  double ElasticProblem::compute_difference(FE_solution* solution_func_ptr, unsigned int degree_max)
+  {
+    hp::QCollection<DIM> quad_collection;
+    for(unsigned int i = 0; i < fe_collection.size(); i++)
+      quad_collection.push_back(QGauss<DIM>(degree_max+3));
+
+
+
+    double solution_difference = 0.0;
+
+    hp::FEValues<DIM> hp_fe_values (fe_collection, quad_collection,
+                             update_values   | update_gradients |
+                             update_quadrature_points | update_JxW_values);
+
+    typename hp::DoFHandler<DIM>::active_cell_iterator
+    cell = dof_handler.begin_active(),
+    endc = dof_handler.end();
+    for (; cell!=endc; ++cell)
+    {
+
+
+      hp_fe_values.reinit (cell);
+      const FEValues<DIM> &fe_values = hp_fe_values.get_present_fe_values();
+      unsigned int n_q_points = fe_values.n_quadrature_points;
+
+      std::vector<Vector<double>> solution_values(n_q_points, Vector<double>(DIM));
+
+      std::vector<Vector<double>>  compare_values (n_q_points, Vector<double>(DIM));
+      solution_func_ptr->vector_value_list(fe_values.get_quadrature_points(), compare_values);
+
+
+      fe_values.get_function_values(present_solution, solution_values);
+
+      for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+      {
+        Vector<double> diff = solution_values[q_point];
+        diff -= compare_values[q_point];
+        solution_difference += diff*diff*fe_values.JxW(q_point);
+      }
+
+    }
+
+    return sqrt(solution_difference);
   }
 
   void ElasticProblem::assemble_bloch_matrix()
@@ -1147,7 +1322,7 @@ namespace compressed_strip
     endc = dof_handler.end();
     for (; cell!=endc; ++cell)
     {
-      hp_fe_values.reinit (cell, last_q_index);
+      hp_fe_values.reinit (cell, q10_index);
       const FEValues<DIM> &fe_values = hp_fe_values.get_present_fe_values();
       unsigned int n_q_points = fe_values.n_quadrature_points;
 
@@ -1295,7 +1470,7 @@ namespace compressed_strip
 
    }
 
-  void ElasticProblem::newton_iterate()
+  void ElasticProblem::newton_iterate(bool output_yes)
   {
     /* This function executes the newton iterations until it converges to a solution
      * or it exceeds the maximum number of iterations.
@@ -1349,11 +1524,14 @@ namespace compressed_strip
     }
 
     // output iterations for convergance.
-    std::cout << "    Converging Iterations : " << iteration << "\n";
-
+    if(output_yes)
+    {
+      std::cout << "    Converging Iterations : " << iteration << "\n";
+      std::cout << "    Current Residual      : " << current_residual << "\n";
+    }
   }
 
-  void ElasticProblem::path_follow_PACA_iterate(Vector<double> *solVectorDir,
+  void ElasticProblem::path_follow_PACA_iterate(Vector<double>& solVectorDir,
                                                           double lambdaDir, double ds)
   {
     // The setup stuff, may need to take  in more inputs. But for now we will do with this
@@ -1364,10 +1542,10 @@ namespace compressed_strip
     unsigned int iteration = 0;
 
     // Scale the input tangent to unity just incase it wasnt already
-    double scalingVal = solVectorDir->norm_sqr() + lambdaDir*lambdaDir;
+    double scalingVal = solVectorDir.norm_sqr() + lambdaDir*lambdaDir;
     scalingVal = 1.0/sqrt(scalingVal);
     lambdaDir *= scalingVal;
-    (*solVectorDir) *= scalingVal;
+    solVectorDir *= scalingVal;
 
     // get the dofs that we will apply dirichlet condition to
     std::vector<bool> boundary_3_dof_x2 (dof_handler.n_dofs(), false);
@@ -1386,7 +1564,7 @@ namespace compressed_strip
 
     // Starts by getting the residual in the initial guess.
     present_lambda += lambdaDir*ds;
-    present_solution.add(ds, *solVectorDir);
+    present_solution.add(ds, solVectorDir);
     evaluation_point = present_solution;
 
     update_F0(present_lambda);
@@ -1438,7 +1616,7 @@ namespace compressed_strip
       solve_boarder_matrix_system();
 
       // add the update using the line search
-      line_search_and_add_step_length_PACA(current_residual, &boundary_3_dof_x2, &previousSolution, previousLambda, ds);
+      line_search_and_add_step_length_PACA(current_residual, &boundary_3_dof_x2, previousSolution, previousLambda, ds);
 
       solution_diff = present_solution;
       solution_diff -= previousSolution;
@@ -1456,7 +1634,7 @@ namespace compressed_strip
   }
 
   void ElasticProblem::line_search_and_add_step_length_PACA(double last_residual, std::vector<bool> *homogenous_dirichlet_dofs,
-                                                                 Vector<double> *previousSolution, double previousLambda, double ds)
+                                                                 Vector<double>& previousSolution, double previousLambda, double ds)
   {
    /* this function makes sure that the step sizes we are taking with
     * the newton iteration are making the residual get smaller.
@@ -1486,7 +1664,7 @@ namespace compressed_strip
 
 
       solutionDiff = present_solution;
-      solutionDiff -= *previousSolution;
+      solutionDiff -= previousSolution;
       lambdaDiff = lambda_eval - previousLambda;
 
       current_residual = system_rhs.norm_sqr() +
@@ -1593,7 +1771,7 @@ namespace compressed_strip
     constraints.distribute (newton_update);
   }
 
-  unsigned int ElasticProblem::get_system_eigenvalues(double lambda_eval, const int cycle)
+  unsigned int ElasticProblem::get_system_eigenvalues(double lambda_eval, const int cycle, const bool update_solution)
   {
     // get the system's eigenvalues. I really don't need to have it take in lambda_eval
     // and could just have it use the present_lambda, but its fine. the cycle is the
@@ -1602,6 +1780,10 @@ namespace compressed_strip
 
     update_F0(lambda_eval);
     evaluation_point = present_solution;
+
+    if(update_solution)
+      newton_iterate(false);
+
     assemble_system_matrix();
     apply_boundaries_and_constraints_system_matrix();
 
@@ -1659,7 +1841,7 @@ namespace compressed_strip
     }
 
     system_matrix_petsc.compress(VectorOperation::insert);
-    SolverControl solver_control (dof_handler.n_dofs(), 1e-6);
+    SolverControl solver_control (3*dof_handler.n_dofs(), 1e-5);
     SLEPcWrappers::SolverKrylovSchur eigensolver (solver_control);
 //    SLEPcWrappers::SolverLAPACK eigensolver (solver_control);
 
@@ -1980,7 +2162,7 @@ namespace compressed_strip
   }
 
   double ElasticProblem::bisect_find_lambda_critical(double lowerBound, double upperBound,
-                                                          double tol, unsigned int maxIter)
+                                                          double tol, unsigned int maxIter, const bool update_solution)
   {
     if (lowerBound < 0.0)
       lowerBound = 0.0;
@@ -1996,7 +2178,7 @@ namespace compressed_strip
 
       N += 1;
 
-      if (get_system_eigenvalues(middleVal, -1) == get_system_eigenvalues(lowerBound, -1))
+      if (get_system_eigenvalues(middleVal, -1, update_solution) == get_system_eigenvalues(lowerBound, -1, update_solution))
         lowerBound = middleVal;
       else
         upperBound = middleVal;
@@ -2027,6 +2209,12 @@ namespace compressed_strip
         Assert (false, ExcNotImplemented());
         break;
       }
+
+    std::vector<std::string> stress_names_11;
+    std::vector<std::string> stress_names_22;
+
+    stress_names_11.push_back("PK2_11_old");
+    stress_names_22.push_back("PK2_22_old");
 
     // output the total displacements. this requires adding in the uniform solution on top of the displacements
 
@@ -2080,7 +2268,7 @@ namespace compressed_strip
     }
 
     data_out_totalDisp.add_data_vector (shifted_solution, solution_names);
-    data_out_totalDisp.build_patches (max_degree);
+    data_out_totalDisp.build_patches ();
     data_out_totalDisp.write_vtk (output_totalDisp);
 
 
@@ -2103,7 +2291,7 @@ namespace compressed_strip
     data_out_disp_from_uniform.attach_dof_handler (dof_handler);
 
     data_out_disp_from_uniform.add_data_vector (present_solution, solution_names);
-    data_out_disp_from_uniform.build_patches (max_degree);
+    data_out_disp_from_uniform.build_patches ();
     data_out_disp_from_uniform.write_vtk (output_disp_from_uniform);
 
     // Now output the deformed mesh
@@ -2114,9 +2302,18 @@ namespace compressed_strip
 
     deformed_data_out.attach_dof_handler(dof_handler);
     deformed_data_out.add_data_vector(shifted_solution, solution_names);
-    hp::MappingCollection<DIM, DIM> mapping;
+    compute_PK2_stresses();
+    deformed_data_out.add_data_vector(PK2_stresses_11, stress_names_11);
+    deformed_data_out.add_data_vector(PK2_stresses_22, stress_names_22);
+
+    postprocess->update_F0(F0);
+    deformed_data_out.add_data_vector(present_solution, *postprocess);
+
+//    hp::MappingCollection<DIM, DIM> mapping;
     MappingQEulerian_hp<DIM> q_mapping(1,  dof_handler, shifted_solution);
-    deformed_data_out.build_patches(q_mapping, 1);
+    deformed_data_out.build_patches(q_mapping);
+
+//    deformed_data_out.build_patches(q_mapping, 1, DataOut<DIM, hp::DoFHandler<DIM>>::CurvedCellRegion::curved_inner_cells);
 
     std::string filename2(output_directory);
     filename2 += "/deformed_mesh";
@@ -2456,10 +2653,13 @@ namespace compressed_strip
     }
     quadrature_collection.push_back(QGauss<DIM>(10));
 
-    last_q_index = FE_id_polynomial_degree.size();
+    quadrature_collection.push_back(QGauss<DIM>(1));
+
+    q10_index = FE_id_polynomial_degree.size();
+    q1_index = q10_index + 1;
   }
 
-  void ElasticProblem::read_asymptotic_input_file(char* filename)
+  bool ElasticProblem::read_asymptotic_input_file(char* filename)
   {
     FILE* fid;
     int endOfFileFlag;
@@ -2662,15 +2862,16 @@ namespace compressed_strip
        fclose(fid);
       }
     }
-
     if (fileReadErrorFlag)
     {
      // default parameter values
-     std::cout << "Error reading input file, Exiting.\n" << std::endl;
-     exit(1);
+     std::cout << "Error reading input file, Proceed without bifurcation amplitude calculation.\n" << std::endl;
+
     }
     else
      std::cout << "Input file successfully read" << std::endl;
+
+    return !fileReadErrorFlag;
   }
 
   void ElasticProblem::getNextDataLine( FILE* const filePtr, char* nextLinePtr,
@@ -2740,13 +2941,35 @@ namespace compressed_strip
     boost::archive::text_oarchive solution_ar(solution_out);
     present_solution.save(solution_ar, 1);
 
+    // lambda value
     char lambda_file[MAXLINE];
     strcpy(lambda_file, saved_state_dir);
-    strcat(lambda_file, "/present_lambda.dat");
+    strcat(lambda_file, "/present_lambda_");
+    strcat(lambda_file, index_char);
+    strcat(lambda_file, ".dat");
     std::ofstream lambda_out(lambda_file);
-
     lambda_out << present_lambda;
     lambda_out.close();
+
+    // lambda_tangent value
+    char lambda_tangent_file[MAXLINE];
+    strcpy(lambda_tangent_file, saved_state_dir);
+    strcat(lambda_tangent_file, "/lambda_tangent_");
+    strcat(lambda_tangent_file, index_char);
+    strcat(lambda_tangent_file, ".dat");
+    std::ofstream lambda_tangent_out(lambda_tangent_file);
+    lambda_tangent_out << initial_lambda_tangent;
+    lambda_tangent_out.close();
+
+    // initial tangent
+    char initial_tangent_file[MAXLINE];
+    strcpy(initial_tangent_file, saved_state_dir);
+    strcat(initial_tangent_file, "/initial_tangent_");
+    strcat(initial_tangent_file, index_char);
+    strcat(initial_tangent_file, ".dat");
+    std::ofstream tangent_out (initial_tangent_file);
+    boost::archive::text_oarchive tangent_ar(tangent_out);
+    initial_solution_tangent.save(tangent_ar, 1);
 
   }
 
@@ -2802,18 +3025,43 @@ namespace compressed_strip
     // lambda value
     char lambda_file[MAXLINE];
     strcpy(lambda_file, input_dir_path);
-    strcat(lambda_file, "/present_lambda.dat");
+    strcat(lambda_file, "/present_lambda_");
+    strcat(lambda_file, index_char);
+    strcat(lambda_file, ".dat");
     std::ifstream lambda_in(lambda_file);
     if (!lambda_in)
     {
       std::cout << "Error reading file: " << lambda_file << " . Exiting." << std::endl;
       exit(-1);
     }
-
     lambda_in >> std::setprecision(15) >> present_lambda;
     lambda_in.close();
-
     update_F0(present_lambda);
+
+    // lambda_tangent value
+    char lambda_tangent_file[MAXLINE];
+    strcpy(lambda_tangent_file, input_dir_path);
+    strcat(lambda_tangent_file, "/lambda_tangent_");
+    strcat(lambda_tangent_file, index_char);
+    strcat(lambda_tangent_file, ".dat");
+    std::ifstream lambda_tangent_in(lambda_tangent_file);
+    if (!lambda_tangent_in)
+    {
+      std::cout << "Error reading file: " << lambda_tangent_file << " . Exiting." << std::endl;
+      exit(-1);
+    }
+    lambda_tangent_in >> std::setprecision(15) >> initial_lambda_tangent;
+    lambda_tangent_in.close();
+
+    char initial_tangent_file[MAXLINE];
+    strcpy(initial_tangent_file, input_dir_path);
+    strcat(initial_tangent_file, "/initial_tangent_");
+    strcat(initial_tangent_file, index_char);
+    strcat(initial_tangent_file, ".dat");
+    std::ifstream tangent_in (initial_tangent_file);
+    boost::archive::text_iarchive tangent_ar(tangent_in);
+    initial_solution_tangent.load(tangent_ar, 1);
+
 
     fileLoadFlag = true;
   }
@@ -2838,38 +3086,6 @@ namespace compressed_strip
     initial_lambda_tangent *= scalingVal;
 
 
-  }
-
-  void ElasticProblem::renumber_boundary_ids()
-  {
-
-    // renumber boundary ids because they have problems being saved for nonuniform mesh.
-    typename Triangulation<DIM>::active_cell_iterator cell =
-     triangulation.begin_active(), endc = triangulation.end();
-    for (; cell != endc; ++cell)
-      for (unsigned int f = 0; f < GeometryInfo<DIM>::faces_per_cell; ++f)
-      {
-
-        const Point<DIM> face_center = cell->face(f)->center();
-        if (fabs(face_center[0] + domain_dimensions[0]/2.0) < 1e-4)  // left
-        {
-          cell->face(f)->set_boundary_id (1);
-        }
-        else if (fabs(face_center[0] - domain_dimensions[0]/2.0) < 1e-4)
-        {// right
-          cell->face(f)->set_boundary_id (2);
-        }
-        else if (fabs(face_center[1]) < 1e-6) //bottom
-        {
-          cell->face(f)->set_boundary_id (3);
-        }
-        else if (fabs(face_center[1] - 1.0) < 1e-6) //top
-        {
-         cell->face(f)->set_boundary_id (4);
-
-        }
-
-      }
   }
 
   void ElasticProblem::print_dof_coords_and_vals(unsigned int indx)
@@ -2954,6 +3170,107 @@ namespace compressed_strip
             // insert the values into the map
             support_points[local_dof_indices[i]] = points[i];
         }
+  }
+
+  void ElasticProblem::compute_PK2_stresses()
+  {
+    unsigned int number_dofs = dof_handler.n_dofs();
+
+    PK2_stresses_11 = 0.0;
+    PK2_stresses_22 = 0.0;
+
+    //    std::vector<Point<DIM>> support_points(number_dofs);
+//    map_dofs_to_support_points(dof_handler, support_points);
+
+    std::vector<double>     nu_values(number_dofs);
+    std::vector<double>     mu_values(number_dofs);
+
+
+//    nu.value_list (support_points, nu_values);
+//    mu->value_list(support_points, mu_values);
+//
+//    std::vector<bool> x2_components = {false, true};
+//    ComponentMask x2_mask(x2_components);
+//
+//    std::vector<bool> is_x2_comp(number_dofs);
+//
+//    DoFTools::extract_dofs(dof_handler, x2_mask, is_x2_comp);
+//
+//    for (unsigned int i = 0; i < number_dofs; i++)
+//    {
+//      // perturb points a little so its not on a boundary
+//      support_points[i](0) += (support_points[i](0) < 0.0 ?  1.0e-4 : -1.0e-4 );
+//      support_points[i](1) += (support_points[i](1) < 0.901 ?  1.0e-4 : -1.0e-4 );
+//
+//
+//      std::vector<Tensor<1, DIM>> solution_gradient(DIM);
+//      VectorTools::point_gradient(dof_handler, present_solution, support_points[i], solution_gradient);
+//      Tensor<2,DIM> F = get_deformation_gradient(solution_gradient);
+//      Tensor<2, DIM> F_inv = invert(F);
+//      double II_F = determinant(F);
+//
+//      std::cout << F[0][0] <<std::endl;
+//
+//      Tensor<2,DIM> PK1 = nh.get_piola_kirchoff_tensor(nu_values[i], mu_values[i],
+//                                                      F, F_inv, II_F);
+//      Tensor<2, DIM> PK2 = F_inv*PK1;
+//
+//
+//      if(is_x2_comp[i])
+//        PK2_stresses[i] = PK2[1][1];
+//      else
+//        PK2_stresses[i] = PK2[0][0];
+//
+//    }
+
+    hp::FEValues<DIM> hp_fe_values (fe_collection, quadrature_collection,
+                             update_values   | update_gradients |
+                             update_quadrature_points | update_JxW_values);
+
+//    const unsigned int   n_q_points    = quadrature_formula.size();
+
+
+//std::cout << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" << std::endl;
+    typename hp::DoFHandler<DIM>::active_cell_iterator
+    cell = dof_handler.begin_active(),
+    endc = dof_handler.end();
+    for (; cell!=endc; ++cell)
+    {
+      hp_fe_values.reinit (cell, q1_index);
+      const FEValues<DIM> &fe_values = hp_fe_values.get_present_fe_values();
+      unsigned int n_q_points = fe_values.n_quadrature_points;
+
+      std::vector<double>     nu_values(n_q_points);
+      std::vector<double>     mu_values(n_q_points);
+
+      std::vector<std::vector<Tensor<1,DIM> > > old_solution_gradients(n_q_points, std::vector<Tensor<1,DIM>>(DIM));
+
+      fe_values.get_function_gradients(evaluation_point, old_solution_gradients);
+
+      nu.value_list (fe_values.get_quadrature_points(), nu_values);
+      mu->value_list (fe_values.get_quadrature_points(), mu_values);
+
+      Tensor<2,DIM> F = get_deformation_gradient(old_solution_gradients[0]);
+      Tensor<2, DIM> F_inv = invert(F);
+      double II_F = determinant(F);
+
+      Tensor<2,DIM> PK1 = nh.get_piola_kirchoff_tensor(nu_values[0], mu_values[0],
+                                                            F, F_inv, II_F);
+
+      Tensor<2, DIM> PK2 = F_inv*PK1;
+
+      PK2_stresses_11[cell->active_cell_index()] = PK2[0][0];
+      PK2_stresses_22[cell->active_cell_index()] = PK2[1][1];
+
+
+//      if(cell->active_cell_index() == 123)
+//      {
+//        std::cout << "~~~~~~ "<<  F[0][0] << " " << F[1][0]<< " "<< F[0][1]<< " "<< F[1][1] <<std::endl;
+//        std::cout << "~~~~~~ "<< PK2[0][0] << " " << PK2[1][0]<< " "<< PK2[0][1]<< " "<< PK2[1][1] <<std::endl<<std::endl;
+//      }
+    }
+//    std::cout << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" << std::endl;
+
   }
 
 }
