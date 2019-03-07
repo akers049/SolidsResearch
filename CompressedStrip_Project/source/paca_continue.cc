@@ -17,6 +17,10 @@ int main (int argc, char** argv)
   std::cout << "Please enter an the index of the state: " << std::endl;
   std::cin >> indx;
 
+  unsigned int num_refine;
+  std::cout << "Please enter number of initial refinements: " << std::endl;
+  std::cin >> num_refine;
+
   ep.read_input_file(fileName);
 
   // read in the current state
@@ -34,7 +38,15 @@ int main (int argc, char** argv)
             << std::endl << std::endl;
   std::cout << "   Starting at lambda = " << ep.get_present_lambda() << std::endl;
 
+  ep.refine_mesh(num_refine, false);
+  std::cout << "\n   Number of active cells:       "
+            << ep.get_number_active_cells()
+            << std::endl;
 
+
+  std::cout << "   Number of degrees of freedom: "
+            << ep.get_n_dofs()
+            << std::endl << std::endl;
 
   Vector<double> previous_solution = ep.present_solution;
 

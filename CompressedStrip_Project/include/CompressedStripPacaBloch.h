@@ -56,6 +56,7 @@
 #include <deal.II/hp/dof_handler.h>
 #include <deal.II/hp/fe_values.h>
 #include <deal.II/fe/fe_series.h>
+#include <deal.II/numerics/solution_transfer.h>
 
 #include <deal.II/lac/trilinos_sparse_matrix.h>
 
@@ -68,7 +69,7 @@
 #include <boost/archive/text_iarchive.hpp>
 
 #include "Constituitive.h"
-#include "mapping_q_eulerian_hp.h"
+
 
 
 #define MAXLINE 1024
@@ -169,9 +170,51 @@ namespace compressed_strip
     {
       present_solution = &solution;
     }
+    void set_zero_flag(){zero_flag = true;}
+
 
     hp::DoFHandler<DIM, DIM> *dof_handler_ptr;
     Vector<double> *present_solution;
+
+  private:
+    bool zero_flag = false;
+  };
+
+
+  class Compute_PK2_stresses_postprocess : public DataPostprocessor<DIM>
+  {
+  public:
+    Compute_PK2_stresses_postprocess(MuFunction *mu_ptr, NuFunction *nu_ptr, Compressible_NeoHookean *constituitive_ptr)
+    {
+      mu = mu_ptr;
+      nu = nu_ptr;
+      nh = constituitive_ptr;
+    }
+
+    virtual void evaluate_vector_field(const DataPostprocessorInputs::Vector< DIM > &   input_data,
+                                        std::vector< Vector< double > > &   computed_quantities) const;
+
+
+    virtual std::vector<std::string> get_names() const;
+
+    virtual UpdateFlags get_needed_update_flags() const;
+    virtual std::vector<DataComponentInterpretation::DataComponentInterpretation> get_data_component_interpretation () const;
+
+    void update_F0(Tensor<2, DIM> &F0_update)
+    {
+      F0 = F0_update;
+    };
+
+
+
+  private:
+    Tensor<2,DIM> get_deformation_gradient(std::vector<Tensor<1,DIM> > old_solution_gradient) const;
+
+    Tensor<2, DIM> F0;
+    MuFunction *mu;
+    NuFunction *nu;
+    Compressible_NeoHookean *nh;
+
   };
 
   /****  ElasticProblem  *****
@@ -184,7 +227,8 @@ namespace compressed_strip
     ~ElasticProblem();
 
     void create_mesh();
-    void setup_system ();
+    void refine_mesh(const unsigned int ntimes = 1, const bool top_only = false);
+    void setup_system (bool initFlag = true);
 
     void assemble_system_energy_and_congugate_lambda();
 
@@ -193,17 +237,17 @@ namespace compressed_strip
     void update_F0(const double lambda);
     void add_small_pertubations(double amplitude, bool firstTime);
 
-    void newton_iterate();
+    void newton_iterate(bool output_yes = true);
 
-    void path_follow_PACA_iterate(Vector<double> *solVectorDir,
+    void path_follow_PACA_iterate(Vector<double>& solVectorDir,
                                          double lambdaGuess, double ds);
 
-    unsigned int get_system_eigenvalues(double lambda_eval, const int cycle);
+    unsigned int get_system_eigenvalues(double lambda_eval, const int cycle, const bool update_solution = false );
     double get_bloch_eigenvalues(const int cycle, const int step, double wave_ratio, unsigned int indx, bool first);
     void set_unstable_eigenvector_as_initial_tangent(unsigned int indx);
 
     double bisect_find_lambda_critical(double lowerBound, double upperBound,
-                                      double tol, unsigned int maxIter);
+                                      double tol, unsigned int maxIter, const bool update_solution = false);
     void output_results(const unsigned int cycle);
     void output_load_info(std::vector<double> lambda_values,
                          std::vector<double> energy_values,
@@ -213,7 +257,7 @@ namespace compressed_strip
                          std::vector<bool> stable = std::vector<bool> (1, true)) const;
 
     void read_input_file(char* filename);
-    void read_asymptotic_input_file(char* filename);
+    bool read_asymptotic_input_file(char* filename);
 
     void save_current_state(unsigned int indx);
     void load_state(unsigned int indx);
@@ -225,6 +269,23 @@ namespace compressed_strip
     {
       VectorTools::interpolate(dof_handler, *solution_func_ptr, present_solution);
       constraints.distribute(present_solution);
+    }
+    void interpolate_tangent(FE_solution* tangent_func_ptr)
+    {
+      initial_solution_tangent.reinit(dof_handler.n_dofs());
+      VectorTools::interpolate(dof_handler, *tangent_func_ptr, initial_solution_tangent);
+      constraints.distribute(initial_solution_tangent);
+    }
+
+
+    double compute_difference(FE_solution* solution_func_ptr, unsigned int degree_max);
+
+    double compute_solution_l2_norm()
+    {
+      FE_solution Zero_Func(dof_handler, present_solution);
+      Zero_Func.set_zero_flag();
+
+      return compute_difference(&Zero_Func, max_degree);
     }
 
     // get methods for important constants
@@ -241,10 +302,17 @@ namespace compressed_strip
     unsigned int get_n_dofs(){return dof_handler.n_dofs();};
     unsigned int get_number_active_cells(){return triangulation.n_active_cells();};
     unsigned int get_number_unit_cells(){return number_unit_cells;};
+    unsigned int get_max_degree(){return max_degree;};
     FE_solution* get_fe_solution_function_ptr()
     {
       FE_solution_function = new FE_solution(dof_handler, present_solution);
       return FE_solution_function;
+    }
+
+    FE_solution* get_fe_tangent_ptr()
+    {
+      FE_tangent_function = new FE_solution(dof_handler, initial_solution_tangent);
+      return FE_tangent_function;
     }
 
 
@@ -292,26 +360,31 @@ namespace compressed_strip
     void line_search_and_add_step_length(double current_residual, std::vector<bool> *homogenous_dirichlet_dofs);
 
     void line_search_and_add_step_length_PACA(double last_residual, std::vector<bool> *homogenous_dirichlet_dofs,
-                                              Vector<double> *previousSolution, double previousLambda, double ds);
+                                              Vector<double>& previousSolution, double previousLambda, double ds);
     void solve();
     void solve_boarder_matrix_system();
 
     void getNextDataLine( FILE* const filePtr, char* nextLinePtr,
                             int const maxSize, int* const endOfFileFlag);
 
-    void   map_dofs_to_support_points (const hp::DoFHandler<DIM, DIM>  &dof_handler, std::vector<Point<DIM> > &support_points);
+    void map_dofs_to_support_points (const hp::DoFHandler<DIM, DIM>  &dof_handler, std::vector<Point<DIM> > &support_points);
 
-
+    void compute_PK2_stresses();
 
     void renumber_boundary_ids();
+
+    Compute_PK2_stresses_postprocess* postprocess = NULL;
 
 
     Triangulation<DIM,DIM>   triangulation;
     hp::DoFHandler<DIM, DIM>      dof_handler;
     hp::FECollection<DIM, DIM>    fe_collection;
     hp::QCollection<DIM>     quadrature_collection;
+    hp::QCollection<DIM-1>   face_quadrature_collection;
 
-    unsigned int last_q_index = 0;
+
+    unsigned int q10_index = 0;
+    unsigned int q1_index = 0;
 
     ConstraintMatrix     constraints;
     ConstraintMatrix     constraints_bloch;
@@ -341,6 +414,9 @@ namespace compressed_strip
     Vector<double>       system_rhs;
     Vector<double>       drhs_dlambda;
     Vector<double>       solution_diff;
+    Vector<double>       PK2_stresses_11;
+    Vector<double>       PK2_stresses_22;
+
     double               lambda_diff = 0.0;
     double               rhs_bottom = 0.0;
 
@@ -381,6 +457,7 @@ namespace compressed_strip
     NuFunction nu;
     MuFunction *mu = NULL;
     FE_solution *FE_solution_function = NULL;
+    FE_solution *FE_tangent_function = NULL;
 
     bool bloch_matched_flag = false;
     std::vector<int> bloch_boundry_1_dof_index;

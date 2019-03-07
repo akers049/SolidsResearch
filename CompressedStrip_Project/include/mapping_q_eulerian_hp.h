@@ -113,6 +113,7 @@ public:
   MappingQEulerian_hp (const unsigned int        degree,
                     const hp::DoFHandler<dim,spacedim> &euler_dof_handler,
                     const VectorType               &euler_vector);
+  virtual ~MappingQEulerian_hp(){};
 
   /**
    * @deprecated Use the constructor with the reverse order of second and

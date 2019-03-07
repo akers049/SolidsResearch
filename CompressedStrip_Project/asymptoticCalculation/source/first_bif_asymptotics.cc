@@ -68,7 +68,7 @@ int main ()
   fid = std::fopen(newFileName, "w");
   if (fid == NULL)
   {
-    std::cout << "Unable to open file \"" << fileName  << "\"" <<  std::endl;
+    std::cout << "Unable to open file \"" << newFileName  << "\"" <<  std::endl;
   }
   else
   {

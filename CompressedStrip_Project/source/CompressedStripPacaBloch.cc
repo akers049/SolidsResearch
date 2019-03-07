@@ -115,7 +115,7 @@ namespace compressed_strip
     std::vector<double>     mu_values(n_q_points);
 
     typename hp::DoFHandler<DIM>::cell_iterator cell = input_data.template get_cell<hp::DoFHandler<DIM>>();
-    if(cell->material_id() == '1')
+    if(cell->material_id() == 'a')
       std::fill(mu_values.begin(), mu_values.end(), mu->value(Point<DIM>(0.0, 1.0), 0));
     else
       std::fill(mu_values.begin(), mu_values.end(), mu->value(Point<DIM>(0.0, 0.0), 0));
@@ -248,6 +248,32 @@ namespace compressed_strip
       delete postprocess;
   }
 
+  void ElasticProblem::init_fe_and_quad_collection()
+  {
+    for(unsigned int i = 0; i < FE_id_polynomial_degree.size(); i++)
+    {
+      unsigned int next_degree = FE_id_polynomial_degree[i];
+      fe_collection.push_back(FESystem<DIM>(FE_Q<DIM>(next_degree), DIM));
+      if(next_degree == 1)
+      {
+        QGauss<1> quad_x(1);
+        QGauss<1> quad_y(2);
+        QAnisotropic<DIM> quadrature_formula_reduced(quad_x, quad_y);
+        quadrature_collection.push_back(quadrature_formula_reduced);
+      }
+      else
+        quadrature_collection.push_back(QGauss<DIM>(next_degree + 1));
+
+      face_quadrature_collection.push_back(QGauss<DIM-1>(next_degree+1));
+
+    }
+    quadrature_collection.push_back(QGauss<DIM>(10));
+
+    quadrature_collection.push_back(QGauss<DIM>(1));
+
+    q10_index = FE_id_polynomial_degree.size();
+    q1_index = q10_index + 1;
+  }
 
   void ElasticProblem::create_mesh()
   {
@@ -303,23 +329,6 @@ namespace compressed_strip
       }
     }
 
-    typename hp::DoFHandler<DIM>::active_cell_iterator
-    cell3 = dof_handler.begin_active(),
-    endc3 = dof_handler.end();
-    for (; cell3!=endc3; ++cell3)
-    {
-      const double x2_pos = (cell3->center())(1);
-      if(x2_pos >= L1)
-        cell3->set_material_id('1');
-      else
-        cell3->set_material_id('0');
-
-    }
-
-
-    // Make sure to renumber the boundaries
-    renumber_boundary_ids();
-
   }
 
   void ElasticProblem::renumber_boundary_ids()
@@ -329,6 +338,13 @@ namespace compressed_strip
     typename Triangulation<DIM>::active_cell_iterator cell =
      triangulation.begin_active(), endc = triangulation.end();
     for (; cell != endc; ++cell)
+    {
+      const double x2_pos = (cell->center())(1);
+      if(x2_pos >= L1)
+        cell->set_material_id('a');
+      else
+        cell->set_material_id('0');
+
       for (unsigned int f = 0; f < GeometryInfo<DIM>::faces_per_cell; ++f)
       {
 
@@ -352,6 +368,94 @@ namespace compressed_strip
         }
 
       }
+    }
+  }
+
+  void ElasticProblem::refine_mesh(const unsigned int ntimes, const bool top_only)
+  {
+    for(unsigned int i = 0; i < ntimes; i ++)
+    {
+      Vector<float> estimated_error_per_cell (triangulation.n_active_cells());
+
+      KellyErrorEstimator<DIM, DIM>::estimate (dof_handler,
+                                         face_quadrature_collection,
+                                         typename FunctionMap<DIM>::type(),
+                                         present_solution,
+                                         estimated_error_per_cell);
+      typename hp::DoFHandler<DIM>::active_cell_iterator
+      cell0 = dof_handler.begin_active(),
+      endc = dof_handler.end();
+      for (; cell0!=endc; ++cell0)
+      {
+        if(top_only && cell0->material_id() == 'a')
+        {
+          estimated_error_per_cell[cell0->active_cell_index()] = 0.0;
+        }
+      }
+
+
+      SolutionTransfer<DIM, Vector<double>, hp::DoFHandler<DIM, DIM>> soltrans(dof_handler);
+
+      GridRefinement::refine_and_coarsen_fixed_number (triangulation,
+                                                       estimated_error_per_cell,
+                                                       0.3, 0.0);
+
+      triangulation.clear_user_flags();
+      // symmetrize
+      typename hp::DoFHandler<DIM>::active_cell_iterator
+      cell = dof_handler.begin_active();
+      for (; cell!=endc; ++cell)
+      {
+        if(cell->user_flag_set())
+          continue;
+
+        Point<DIM> center_1 = cell->center();
+
+        typename hp::DoFHandler<DIM>::active_cell_iterator cell2 = cell;
+        ++cell2;
+        for(; cell2!=endc; ++cell2)
+        {
+          Point<DIM> center_2 = cell2->center();
+          if(fabs(center_1(0) + center_2(0)) < 1e-6
+              && fabs(center_1(1) - center_2(1)) < 1e-6)
+          {
+            cell2->set_user_flag();
+            // they are match
+            if(cell->refine_flag_set() && !(cell2->refine_flag_set()))
+              cell2->set_refine_flag();
+            else if (!(cell->refine_flag_set()) && cell2->refine_flag_set())
+              cell->set_refine_flag();
+
+            break;
+          }
+        }
+      }
+
+      soltrans.prepare_for_pure_refinement();
+
+      triangulation.execute_coarsening_and_refinement ();
+
+      dof_handler.distribute_dofs(fe_collection);
+
+      Vector<double> old_solution(present_solution);
+      Vector<double> old_tangent(initial_solution_tangent);
+
+      initial_solution_tangent.reinit(dof_handler.n_dofs());
+      present_solution.reinit(dof_handler.n_dofs());
+
+      soltrans.refine_interpolate(old_tangent, initial_solution_tangent);
+      soltrans.refine_interpolate(old_solution, present_solution);
+
+      renumber_boundary_ids();
+
+      setup_system(false);
+
+      constraints.distribute(present_solution);
+      constraints.distribute(initial_solution_tangent);
+
+      newton_iterate();
+    }
+
   }
 
   void ElasticProblem::setup_system (bool initFlag)
@@ -361,13 +465,14 @@ namespace compressed_strip
 
     // only reinit the present solution if it wasn't already loaded in
     // Also, only distribute the dofs if it hasn't been done so already.
-    if (fileLoadFlag == false || initFlag == false)
+    if (fileLoadFlag == false)
     {
 
       dof_handler.distribute_dofs (fe_collection);
       present_solution.reinit (dof_handler.n_dofs());
     }
 
+    renumber_boundary_ids();
     setup_system_constraints();
 
     unsigned int number_dofs = dof_handler.n_dofs();
@@ -2632,31 +2737,6 @@ namespace compressed_strip
 
     init_fe_and_quad_collection();
 
-  }
-
-  void ElasticProblem::init_fe_and_quad_collection()
-  {
-    for(unsigned int i = 0; i < FE_id_polynomial_degree.size(); i++)
-    {
-      unsigned int next_degree = FE_id_polynomial_degree[i];
-      fe_collection.push_back(FESystem<DIM>(FE_Q<DIM>(next_degree), DIM));
-      if(next_degree == 1)
-      {
-        QGauss<1> quad_x(1);
-        QGauss<1> quad_y(2);
-        QAnisotropic<DIM> quadrature_formula_reduced(quad_x, quad_y);
-        quadrature_collection.push_back(quadrature_formula_reduced);
-      }
-      else
-        quadrature_collection.push_back(QGauss<DIM>(next_degree + 1));
-
-    }
-    quadrature_collection.push_back(QGauss<DIM>(10));
-
-    quadrature_collection.push_back(QGauss<DIM>(1));
-
-    q10_index = FE_id_polynomial_degree.size();
-    q1_index = q10_index + 1;
   }
 
   bool ElasticProblem::read_asymptotic_input_file(char* filename)
