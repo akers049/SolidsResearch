@@ -1,0 +1,35 @@
+# this is an example input file for the NeoHookean_Newton_CompressedStrip code.
+# Blank lines and ones starting with '#' are ignored.
+
+# output file name prefix
+HP_5_4
+
+# Number of sections for refinement (1 for uniform case)
+3
+
+# polynomial degree for each section
+1 1 1
+
+# number unit cells
+4
+
+# Dimensions of grids in x1 and x2 of each unit cell, respectfully: unsigned int     unsigned int
+10 10 1
+
+# Absolute tolerance on the l2 norm of the residual for the newton iteration: double
+1e-8 150
+
+# exponential growth parameter kappa
+5.0 0.9
+
+# critical load
+0.209546
+
+# critical frequency
+6.904599
+
+# ds and load steps : double     unsigned int
+0.006 150
+
+# output every n steps: unsigned int
+10
