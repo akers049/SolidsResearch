@@ -133,11 +133,19 @@ namespace compressed_strip
 
       Tensor<2,DIM> PK1 = nh->get_piola_kirchoff_tensor(nu_values[i], mu_values[i],
                                                             F, F_inv, II_F);
-      Tensor<2, DIM> PK2 = F_inv*PK1;
+      Tensor<2, DIM> sigma = (1.0/II_F)*PK1*transpose(F);//F_inv*PK1;
 //      Tensor<2, DIM> PK2 = PK1;
+      double sigma_22 = (2.0*nu_values[i]*mu_values[i])/(1.0 - nu_values[i])*(II_F*II_F - II_F);
 
-      computed_quantities[i][0] = PK2[0][0];
-      computed_quantities[i][1] = PK2[1][1];
+
+      double mises = 0.0;
+
+      mises = sqrt(0.5*(  (sigma[0][0] - sigma[1][1])*(sigma[0][0] - sigma[1][1]) + (sigma[0][0] - sigma_22)*(sigma[0][0] - sigma_22) +
+          (sigma_22 - sigma[1][1])*(sigma_22 - sigma[1][1]) + 6.0*sigma[0][1]*sigma[0][1] ));
+
+      computed_quantities[i][0] = sigma[0][0];
+      computed_quantities[i][1] = sigma[1][1];
+      computed_quantities[i][2] = mises;
 
     }
   }
@@ -147,6 +155,7 @@ namespace compressed_strip
     std::vector<std::string> output_names;
     output_names.push_back("PK2_11");
     output_names.push_back("PK2_22");
+    output_names.push_back("mises");
 
     return output_names;
   }
@@ -160,10 +169,10 @@ namespace compressed_strip
 
   std::vector<DataComponentInterpretation::DataComponentInterpretation> Compute_PK2_stresses_postprocess::get_data_component_interpretation () const
   {
-    std::vector<DataComponentInterpretation::DataComponentInterpretation> interpretation (DIM);
+    std::vector<DataComponentInterpretation::DataComponentInterpretation> interpretation (DIM+1);
     interpretation[0] = DataComponentInterpretation::component_is_scalar;
     interpretation[1] = DataComponentInterpretation::component_is_scalar;
-
+    interpretation[2] = DataComponentInterpretation::component_is_scalar;
     return interpretation;
   }
 
@@ -501,6 +510,8 @@ namespace compressed_strip
 
     if (initFlag == true)
       postprocess = new Compute_PK2_stresses_postprocess(mu, &nu, &nh);
+
+//    refine_mesh(1, true);
 
   }
 
@@ -2090,13 +2101,15 @@ namespace compressed_strip
     const unsigned int num_arnoldi_vectors = 2*eigenvalues.size() + 2;
     ArpackSolver::AdditionalData additional_data(num_arnoldi_vectors, ArpackSolver::WhichEigenvalues::largest_magnitude, true);   //, ArpackSolver::WhichEigenvalues::smallest_magnitude, false);
     ArpackSolver eigensolver (solver_control, additional_data);
+
     eigensolver.solve (bloch_matrix,
                        IdentityMatrix(2*dof_handler.n_dofs()),
                        inverse,
                        eigenvalues,
                        eigenfunctions,
-                       eigenvalues.size(),
-                       0);
+                       eigenvalues.size());
+
+//    eigensolver.solve()
 
     std::string filename(output_directory);
     filename += "/bloch_eigenvalues";
@@ -3341,6 +3354,8 @@ namespace compressed_strip
 
       PK2_stresses_11[cell->active_cell_index()] = PK2[0][0];
       PK2_stresses_22[cell->active_cell_index()] = PK2[1][1];
+
+      PK2_stresses_11[cell->active_cell_index()] = mu_values[0];
 
 
 //      if(cell->active_cell_index() == 123)

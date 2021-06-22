@@ -60,8 +60,11 @@
 
 #include <deal.II/lac/trilinos_sparse_matrix.h>
 
+//#define DEAL_II_WITH_PETSC 1
+
 #include <deal.II/lac/petsc_sparse_matrix.h>
 #include <deal.II/lac/petsc_parallel_vector.h>
+#include <deal.II/lac/petsc_vector.h>
 #include <deal.II/lac/slepc_solver.h>
 
 
@@ -400,7 +403,7 @@ namespace compressed_strip
     SparsityPattern      sparsity_pattern_bloch;
     SparseMatrix<double> bloch_matrix;
 
-    PETScWrappers::SparseMatrix          system_matrix_petsc;
+    PETScWrappers::SparseMatrix       system_matrix_petsc;
     PETScWrappers::SparseMatrix             stiffness_matrix;
     std::vector<PETScWrappers::MPI::Vector> eigenfunctions_;
     std::vector<double>                     eigenvalues_;

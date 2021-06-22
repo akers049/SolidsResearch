@@ -4,7 +4,6 @@ if abs(lambda_eval - 1) < 1e-1
     detVal = 1e9;
     return;
 end
-
 w_eval = 2*pi/wavelength_eval;
 L2 = 1.0;
 mu0 = 1;
@@ -49,7 +48,7 @@ alphas_roots = roots([a, 0, c, 0, e]);
 alphas = sort(alphas_roots);
 
 % now can solve for B's:
-B = zeros(4, 1);
+B = (zeros(4, 1));
 for i = 1:4
     B(i) = (L1111*w_eval^2 - L1212*alphas(i)^2)/(w_eval*alphas(i)*(L2112 + L1122));
    % B(i) = (w*alphas(i)*(L1221 + L1122) + kappa*L1122*w)/(kappa*L2222*alphas(i) + L2222*alphas(i)^2 - L2121*w^2);
@@ -57,7 +56,7 @@ end
 
 % now construct the system matrix:
 
-systemMat = (zeros(8,8));
+systemMat = ((zeros(8,8)));
 % first row
 for i = 1:4
     systemMat(1, i) = B(i);

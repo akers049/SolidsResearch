@@ -1,6 +1,12 @@
-function [C] = u2_exponential_mu(nu, k, w_c, lambda_c, A, alphas)
+function [PD] = u2_exponential_mu(PD) %nu, k, w_c, lambda_c, A, alphas)
 mu0 = 1.0;
 L = 1;
+nu = PD.nu;
+k = PD.k;
+w_c = PD.w_c;
+lambda_c = PD.lambda_c;
+A = PD.A; 
+alphas = PD.alphas;
 
 % give lambda1, the stretch in the x1 direction
 lambda1 = 1 - lambda_c;
@@ -94,7 +100,7 @@ v2_11 = @(x) real(sum( (alphas.^2).*((A.*B).*(exp(alphas*x)))));
         u2_1 = v2_1(x);
         
         out = 0.5*(M(2,2,2,2,2,2)*u2_1*u2_1 - 2*M(2,2,1,1,2,2)*w_c*u1*u2_1 + M(2,2,1,1,1,1)*(w_c^2)*u1*u1 + ...
-                   -M(2,2,1,2,1,2)*u1_1*u1_1 - M(2,2,2,1,2,1)*(w_c^2)*u2*u2 - M(2,2,1,2,2,1)*(w_c)*u1_1*u2);
+                   -M(2,2,1,2,1,2)*u1_1*u1_1 - M(2,2,2,1,2,1)*(w_c^2)*u2*u2 - 2*M(2,2,1,2,2,1)*(w_c)*u1_1*u2);
     end
 
 % now need to enter that A matrix
@@ -162,4 +168,11 @@ rhs = [ 0    ;
     
     
 C = boundary_mat\rhs;
+PD.C = C;
+PD.phi1 = phi(1, :);
+PD.phi3 = phi(3, :);
+PD.phi_inv_T_2 = phi_inv(:, 2);
+PD.phi_inv_T_4 = phi_inv(:, 4);
+PD.r = r;
+
 end

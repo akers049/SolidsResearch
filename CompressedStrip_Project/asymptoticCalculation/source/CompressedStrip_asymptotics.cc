@@ -387,7 +387,7 @@ namespace compressed_strip
       if(x2 > L1 && pieceConstFlag == true)
         a = L1;
 
-      double abserr = 0., relerr = 1.e-7; // requested errors
+      double abserr = 1.e-7, relerr = 1.e-7; // requested errors
       double error; // the error estimate
 
       ElasticProblem* ptr_1 = this;
@@ -412,13 +412,13 @@ namespace compressed_strip
         root_index = i;
 
         gsl_integration_qag (F1, a, x2, abserr, relerr, np,
-            GSL_INTEG_GAUSS15, w, &(E1_exp_integral_real[i]), &error);
+            GSL_INTEG_GAUSS31, w, &(E1_exp_integral_real[i]), &error);
         gsl_integration_qag (F2, a, x2, abserr, relerr, np,
-            GSL_INTEG_GAUSS15, w, &(E2_exp_integral_real[i]), &error);
+            GSL_INTEG_GAUSS31, w, &(E2_exp_integral_real[i]), &error);
         gsl_integration_qag (F3, a, x2, abserr, relerr, np,
-            GSL_INTEG_GAUSS15, w, &(E1_exp_integral_imag[i]), &error);
+            GSL_INTEG_GAUSS31, w, &(E1_exp_integral_imag[i]), &error);
         gsl_integration_qag (F4, a, x2, abserr, relerr, np,
-            GSL_INTEG_GAUSS15, w, &(E2_exp_integral_imag[i]), &error);
+            GSL_INTEG_GAUSS31, w, &(E2_exp_integral_imag[i]), &error);
 
 
         E1_exp_integral_real[i] *= (-1.0/L(1,2,1,2));
@@ -585,9 +585,10 @@ namespace compressed_strip
     double lambda1 = 1.0 - lambda;
     double lambda2;
 
+    double nuVal = nu.get_nu_value();
     // solve quadratic for lambda2
-    double a = (1.0 + (2.0*NU_VALUE/(1.0 - NU_VALUE))*lambda1*lambda1);
-    double b = (-2.0*NU_VALUE/(1.0 - NU_VALUE))*lambda1;
+    double a = (1.0 + (2.0*nuVal/(1.0 - nuVal))*lambda1*lambda1);
+    double b = (-2.0*nuVal/(1.0 - nuVal))*lambda1;
     double c = -1.0;
 
 
@@ -656,7 +657,9 @@ namespace compressed_strip
 
         dlambda1_dlambda = -1.0;
 
-        a_nu = (2.0*NU_VALUE/(1.0 - NU_VALUE));
+        double nuVal = nu.get_nu_value();
+
+        a_nu = (2.0*nuVal/(1.0 - nuVal));
         double lambda1 = 1.0 - lambda_eval;
         double term1 = 2.0*a_nu*(1.0 + a_nu*lambda1*lambda1);
         double term2 = -4.0*a_nu*a_nu*lambda1*lambda1;
@@ -686,7 +689,7 @@ namespace compressed_strip
     E_u1u1u1 = 0.0;
     E_u2u2 = 0.0;
 
-    QGauss<DIM>  quadrature_formula(6);
+    QGauss<DIM>  quadrature_formula(5);
 
     FEValues<DIM> fe_values (fe, quadrature_formula,
                              update_values   | update_gradients |
@@ -712,7 +715,8 @@ namespace compressed_strip
 
     dlambda1_dlambda = -1.0;
 
-    a_nu = (2.0*NU_VALUE/(1.0 - NU_VALUE));
+    double nuVal = nu.get_nu_value();
+    a_nu = (2.0*nuVal/(1.0 - nuVal));
     double lambda1 = 1.0 - lambda_eval;
     double term1 = 2.0*a_nu*(1.0 + a_nu*lambda1*lambda1);
     double term2 = -4.0*a_nu*a_nu*lambda1*lambda1;
@@ -742,7 +746,7 @@ namespace compressed_strip
 //    get_grad_u1_value_list(pp, grad_u2);
 //    std::cout << (grad_u2[0])[0][0] << " " <<  (grad_u2[0])[0][1] << "  " << (grad_u2[0])[1][0] << " " <<  (grad_u2[0])[1][1] << std::endl;
 //    exit(-1);
-
+    double u1u1 = 0.0;
 
     typename DoFHandler<DIM>::active_cell_iterator cell = dof_handler.begin_active(),
                                                    endc = dof_handler.end();
@@ -759,8 +763,14 @@ namespace compressed_strip
       get_grad_u1_value_list(fe_values.get_quadrature_points(), grad_u1);
       get_grad_u2_value_list(fe_values.get_quadrature_points(), grad_u2);
 
+      std::vector<Vector<double>> u1(n_q_points, Vector<double>(DIM));
+
+      u1_value_list(fe_values.get_quadrature_points(), u1);
+
       for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
       {
+        u1u1 += (u1[q_point])*(u1[q_point])*fe_values.JxW(q_point);
+
 
         Tensor<2,DIM> F = get_deformation_gradient(old_solution_gradients[q_point]);
         Tensor<2, DIM> F_inv = invert(F);
@@ -813,10 +823,12 @@ namespace compressed_strip
         E_u1u1u1 += contrib_E_u1u1u1*fe_values.JxW(q_point);
       }
     }
+    u1u1 = u1u1/domain_dimensions[0];
 
     delta_lambda1 = -0.5*E_u1u1u1/dEdlambda_u1u1;
     delta_lambda2 = -(1.0/3.0)*(E_u1u1u1u1 + 3.0*E_u2u1u1)/(dEdlambda_u1u1);
 
+    std::cout << E_u1u1u1u1 << "     " <<  E_u2u1u1 << "     " << dEdlambda_u1u1  << "   " << u1u1 << std::endl;
     // now get the congateLambda2
 
     delta_conguateLambda2 = 0.0;
@@ -1252,6 +1264,7 @@ namespace compressed_strip
         pieceConstFlag = false;
 
         mu = new MuFunction(kappa);
+        nu.set_nu_value(nuVal);
 
         std::cout << "Using Exponential mu with: k = " << kappa << ", nu = " << nuVal << std::endl;
       }
@@ -1280,6 +1293,7 @@ namespace compressed_strip
         pieceConstFlag = true;
 
         mu = new MuFunction(kappa, L1);
+        nu.set_nu_value(nuVal);
 
         std::cout << "Using Piecewise Constant mu with: k = " << kappa << ", L1 = " << L1 << ", nu = " << nuVal << std::endl;
 
@@ -1517,8 +1531,8 @@ namespace compressed_strip
     set_present_lambda(critical_lambda_analytical);
     Tensor<2, DIM> F_inv = invert(F0);
     double II_F = determinant(F0);
-    L_tensor = nh.get_incremental_moduli_tensor(NU_VALUE, 1.0, F_inv, II_F);
-    M_tensor = nh.get_d3W_dFdFdF(NU_VALUE, 1.0, F_inv, II_F);
+    L_tensor = nh.get_incremental_moduli_tensor(nu.get_nu_value(), 1.0, F_inv, II_F);
+    M_tensor = nh.get_d3W_dFdFdF(nu.get_nu_value(), 1.0, F_inv, II_F);
 
 
 //    grid_dimensions[0] = 20;

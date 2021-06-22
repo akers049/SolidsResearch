@@ -9,7 +9,7 @@ CMAKE_MINIMUM_REQUIRED(VERSION 2.8.8)
 
 set(QMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -Wno-deprecated")
 
-FIND_PACKAGE(deal.II 8.5.0 QUIET
+FIND_PACKAGE(deal.II 8.5.0 
   HINTS ${deal.II_DIR} ${DEAL_II_DIR} ../ ../../ $ENV{DEAL_II_DIR}
   )
 IF(NOT ${deal.II_FOUND})
@@ -67,6 +67,10 @@ TARGET_LINK_LIBRARIES(bloch_eigs_branch CompressedStripPacaBloch)
 ADD_EXECUTABLE(compare_solutions ${CMAKE_SOURCE_DIR}/source/compare_solutions.cc)
 DEAL_II_SETUP_TARGET(compare_solutions)
 TARGET_LINK_LIBRARIES(compare_solutions CompressedStripPacaBloch)
+
+ADD_EXECUTABLE(princple_info ${CMAKE_SOURCE_DIR}/source/princple_info.cc)
+DEAL_II_SETUP_TARGET(princple_info)
+TARGET_LINK_LIBRARIES(princple_info CompressedStripPacaBloch)
 
 
 # Define a distclean target to remove every generated file:

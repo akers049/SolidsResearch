@@ -1,6 +1,6 @@
 function [] = process_exponential_output()
 
-exp_files = dir('/home/andrew/dealii/SolidsResearch/CompressedStrip_Project/asymptoticCalculation/output/exponential_mu/asymptotic*');
+exp_files = dir('/home/andrew/Research/MinnesotaStuff/SolidsResearch/CompressedStrip_Project/asymptoticCalculation/output/exponential_mu/exponentialInputFiles/asymptotic*');
 
 data_mat = [];
 for i = 1:length(exp_files)
@@ -12,13 +12,13 @@ angle = atan2d(data_mat(3, :), data_mat(2, :));
 figure(1)
 yyaxis left
 ylim([-20 40])
-plot(data_mat(1, :), data_mat(2, :), '.');
+plot(data_mat(1, :), data_mat(3, :), '.');
 ylabel('\lambda_2', 'rot', 1 , 'Fontsize', 18)
 
 
 
 yyaxis right 
-plot(data_mat(1, :), data_mat(3, :), '.');
+plot(data_mat(1, :), data_mat(4, :), '.');
 ylim([-500, 400])
 ylabel('\Lambda_2', 'rot', 1,  'Fontsize', 18)
 %% align zero for left and right

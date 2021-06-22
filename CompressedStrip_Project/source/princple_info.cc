@@ -2,8 +2,9 @@
 #include <fstream>
 
 using namespace dealii;
-int main ()
+int main  (int argc, char** argv)
 {
+  Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
 
   compressed_strip::ElasticProblem ep;
 
@@ -38,9 +39,11 @@ int main ()
 
 
 
-  for(unsigned int i = 0; i < 1000; i++)
+  for(unsigned int i = 0; i < 3000; i++)
   {
-    double lambda_eval = ((ep.critical_lambda_analytical + 0.1)*i)/1000.0;
+    if(i%10 == 0)
+      std::cout << "  Iteration " << i << std::endl;
+    double lambda_eval = ((ep.critical_lambda_analytical + 0.1)*i)/3000.0;
     ep.set_present_lambda( lambda_eval );
 
     // get energy and congugate lambda value and save them.

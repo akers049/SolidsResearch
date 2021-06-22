@@ -72,7 +72,7 @@ int main ()
   }
   else
   {
-    fprintf(fid, "%.16f\n%.16f\n%.16f", ep.get_kappa() ,ep.get_deltaLambda2(),ep.get_deltaConguateLambda2());
+    fprintf(fid, "%.16f\n%.16f\n%.16f\n%.16f", ep.get_kappa(), ep.get_L1(), ep.get_deltaLambda2(),ep.get_deltaConguateLambda2());
   }
 
 

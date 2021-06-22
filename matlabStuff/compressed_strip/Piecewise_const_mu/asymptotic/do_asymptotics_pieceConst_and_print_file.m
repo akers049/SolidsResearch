@@ -1,13 +1,13 @@
-function [PD] = do_asymptotics_pieceConst_and_print_file(nu, L1, kappa, starting_wavelength, index)
+function [PD] = do_asymptotics_pieceConst_and_print_file(nu, L1, kappa, starting_wavelength, index, just_critload)
 
 PD = struct;
 kappa_eval = kappa;
-stepSize = 0.001;
-wavelength_vector = starting_wavelength:stepSize:4;
+stepSize = 0.0001;
+wavelength_vector = starting_wavelength:stepSize:6;
 solutionVector = zeros(size(wavelength_vector));
 
 % get initial guess
-xx = 0.1:0.01:0.89;
+xx = 0.002:0.01:0.89;
 yy = zeros(size(xx));
 for i = 1:length(xx)
     yy(i) = piece_const_mu_evaluate_determinant_M(nu, L1, kappa_eval, wavelength_vector(1), xx(i));
@@ -25,7 +25,7 @@ guess_x = xx(crossingIndex(1));
 MAXCOUNT = 100;
 initialGuess = guess_x;
 
-ds = stepSize/10;
+ds = stepSize;
 for i = 1:length(wavelength_vector)
 %     funHandle = @(x) piece_const_mu_evaluate_determinant_M(nu, L1, kappa_eval, wavelength_vector(i), x);
 % 
@@ -52,7 +52,7 @@ for i = 1:length(wavelength_vector)
     if(count < MAXCOUNT)
       solutionVector(i) = fzero(funHandle, [guess_low, guess_high]);
     else
-%       fprintf('%f NEXT\n', i);
+       fprintf('%f NEXT\n', i);
       solutionVector(i) = initialGuess;
     end
     
@@ -70,16 +70,17 @@ end
 solutionVector = solutionVector(1:i);
 wavelength_vector = wavelength_vector(1:i);
 
-plot(wavelength_vector, solutionVector, 'LineWidth', 1.3)
-grid on
-ylabel('$\lambda_{c}$      ', 'rot', 1, 'Interpreter', 'Latex', 'Fontsize', 16)
-xlabel('Wavelength', 'fontsize', 16)
-title(['$\mu_2/\mu_1$ = ', num2str(kappa)], 'Fontsize', 16, 'Interpreter', 'Latex')
-axis([0 25 0.1 1])
+% plot(wavelength_vector, solutionVector, 'LineWidth', 1.3)
+% grid on
+% ylabel('$\lambda_{c}$      ', 'rot', 1, 'Interpreter', 'Latex', 'Fontsize', 16)
+% xlabel('Wavelength', 'fontsize', 16)
+% title(['$\mu_2/\mu_1$ = ', num2str(kappa)], 'Fontsize', 16, 'Interpreter', 'Latex')
+% axis([0 25 0 1])
 
 
 criticalLoad = min(solutionVector);
 criticalWavelength =  wavelength_vector(find(min(solutionVector) == solutionVector));
+criticalWavelength = criticalWavelength(1);
 criticalFreq = 2*pi/criticalWavelength;
 
 if(criticalLoad < 0 || criticalLoad > 1)
@@ -87,7 +88,13 @@ if(criticalLoad < 0 || criticalLoad > 1)
    return; 
 end
 
+PD.wavelength_c = criticalWavelength;
+PD.lambda_c = criticalLoad;
 
+if(just_critload == true)
+    PD.good = 1;
+    return;
+end
 %% Now get the eigenvectors and stuff:
 
 lambda_eval = criticalLoad;
@@ -197,10 +204,15 @@ for i = 1:4
     systemMat(8, i+4) = -kappa_eval*(L2222*alphas(i)*B(i)*exp(alphas(i)*L1) - w_eval*L1122*exp(alphas(i)*L1));
     
 end
-
-systemMat_reffed = rref(systemMat);
-A = [systemMat_reffed(1:7, 8); -1];
-A = A/sum(B.*A(5:8).*exp(alphas));
+det(systemMat);
+[eigVects, eigVals] = eig(systemMat);
+[~, mindex] = min(abs(diag(eigVals)));
+A = eigVects(:, mindex);
+% A = null(systemMat);
+% A = A(:, 1);
+% systemMat_reffed = rref(systemMat);
+% A = [systemMat_reffed(1:7, 8); -1];
+% A = A/sum(B.*A(5:8).*exp(alphas));
 
 % norm_2_v1_v2_1 = @(x) (sum(A(1:4).*exp(alphas.*x))).^2 + (sum(B.*A(1:4).*exp(alphas.*x))).^2;
 % norm_2_v1_v2_2 = @(x) (sum(A(5:8).*exp(alphas.*x))).^2 + (sum(B.*A(5:8).*exp(alphas.*x))).^2;
@@ -211,22 +223,28 @@ A = A/sum(B.*A(5:8).*exp(alphas));
 % A = A*sqrt(1/u1_dot_u1);
 
 PD.k = kappa;
-PD.lambda_c = criticalLoad;
 PD.w_c = criticalFreq;
-PD.A = A;
-PD.B = B;
-PD.alphas = alphas;
 PD.nu = nu;
 PD.L1 = L1;
 
-u1_inner = @(x1, x2) testFunc_1(PD, x1, x2);
-u1_dot_u1 = (1/criticalWavelength)*(integral2(u1_inner, -pi/PD.w_c, pi/PD.w_c, 0 , 0.9) + integral2(u1_inner, -pi/PD.w_c, pi/PD.w_c, 0.9 , 1));
-PD.A = PD.A*sqrt(1/u1_dot_u1);
-
+if ( abs(det(systemMat)) < 1.0e-4)
+    PD.A = A;
+    PD.B = B;
+    PD.alphas = alphas;
+    u1_inner = @(x1, x2) testFunc_1(PD, x1, x2);
+    u1_dot_u1 = (1/criticalWavelength)*(integral2(u1_inner, -pi/PD.w_c, pi/PD.w_c, 0 , L1) + integral2(u1_inner, -pi/PD.w_c, pi/PD.w_c, L1, 1));
+    PD.A = PD.A*sqrt(1/u1_dot_u1);
+else
+    PD = vpa_zero_and_A(PD, criticalLoad);
+    u1_inner = @(x1, x2) testFunc_1(PD, x1, x2);
+    u1_dot_u1 = (1/criticalWavelength)*(integral2(u1_inner, -pi/PD.w_c, pi/PD.w_c, 0 , L1) + integral2(u1_inner, -pi/PD.w_c, pi/PD.w_c, L1, 1));
+    PD.A = PD.A*sqrt(1/u1_dot_u1);
+end
 % u1u1 = @(x1, x2) u1_dot_u1(PD, x1, x2);
 % u1_dot = integral2(u1u1, -pi/PD.w_c, pi/PD.w_c, 0, 1);
 % 
 % A = A*sqrt(1/u1_dot);
+
 % PD.A = A;
 
 
@@ -234,56 +252,56 @@ PD = u2_piece_const_mu(PD);
 
 %% print the file
 
-o = fopen(['/home/andrew/dealii/SolidsResearch/CompressedStrip_Project/asymptoticCalculation/inputFiles/', 'asymptotic_piecewiseConstant_', num2str(index), '.in'],'w');
+o = fopen(['/home/andrew/Research/MinnesotaStuff/SolidsResearch/CompressedStrip_Project/asymptoticCalculation/inputFiles/piecewiseConstInputFiles/', 'asymptotic_piecewiseConstant_', num2str(index), '.in'],'w');
 fprintf(o, '#INPUT FILE FOR PIECEWISE CONSTANT mu\n');
 fprintf(o, 'piecewiseConstant_mu\n');
 fprintf(o, '1\n');
-fprintf(o, '15 15\n');;
-fprintf(o, '%f %f %f\n', PD.nu, PD.k, PD.L1);
-fprintf(o, '%f\n', PD.lambda_c);
-fprintf(o, '%f\n', PD.w_c);
+fprintf(o, '20 40 1\n');
+fprintf(o, '%e %e %e\n', PD.nu, PD.k, PD.L1);
+fprintf(o, '%.16e\n', PD.lambda_c);
+fprintf(o, '%.16e\n', PD.w_c);
 for i = 1:4
-   fprintf(o, '%.16f %.16f ', real(PD.alphas(i)), imag(PD.alphas(i)));  
+   fprintf(o, '%.16e %.16e ', real(PD.alphas(i)), imag(PD.alphas(i)));  
 end
 fprintf(o, '\n');
 
 for i = 1:8
-   fprintf(o, '%.16f %.16f ', real(PD.A(i)), imag(PD.A(i)));  
+   fprintf(o, '%.16e %.16e ', real(PD.A(i)), imag(PD.A(i)));  
 end
 fprintf(o, '\n');
 
 for i = 1:4
-   fprintf(o, '%.16f %.16f ', real(PD.B(i)), imag(PD.B(i)));  
+   fprintf(o, '%.16e %.16e ', real(PD.B(i)), imag(PD.B(i)));  
 end
 fprintf(o, '\n');
 
 for i = 1:4
-   fprintf(o, '%.16f %.16f ', real(PD.phi1(i)), imag(PD.phi1(i)));  
+   fprintf(o, '%.16e %.16e ', real(PD.phi1(i)), imag(PD.phi1(i)));  
 end
 fprintf(o, '\n');
 
 for i = 1:4
-   fprintf(o, '%.16f %.16f ', real(PD.phi3(i)), imag(PD.phi3(i)));  
+   fprintf(o, '%.16e %.16e ', real(PD.phi3(i)), imag(PD.phi3(i)));  
 end
 fprintf(o, '\n');
 
 for i = 1:4
-   fprintf(o, '%.16f %.16f ', real(PD.phi_inv_T_2(i)), imag(PD.phi_inv_T_2(i)));  
+   fprintf(o, '%.16e %.16e ', real(PD.phi_inv_T_2(i)), imag(PD.phi_inv_T_2(i)));  
 end
 fprintf(o, '\n');
 
 for i = 1:4
-   fprintf(o, '%.16f %.16f ', real(PD.phi_inv_T_4(i)), imag(PD.phi_inv_T_4(i)));  
+   fprintf(o, '%.16e %.16e ', real(PD.phi_inv_T_4(i)), imag(PD.phi_inv_T_4(i)));  
 end
 fprintf(o, '\n');
 
 for i = 1:4
-   fprintf(o, '%.16f %.16f ', real(PD.r(i)), imag(PD.r(i)));  
+   fprintf(o, '%.16e %.16e ', real(PD.r(i)), imag(PD.r(i)));  
 end
 fprintf(o, '\n');
 
 for i = 1:8
-   fprintf(o, '%.16f %.16f ', real(PD.C(i)), imag(PD.C(i)));  
+   fprintf(o, '%.16e %.16e ', real(PD.C(i)), imag(PD.C(i)));  
 end
 fprintf(o, '\n');
 

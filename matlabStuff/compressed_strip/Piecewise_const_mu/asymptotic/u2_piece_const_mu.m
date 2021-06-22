@@ -1,4 +1,12 @@
-function [C] = u2_piece_const_mu(nu, L1, k, w_c, lambda_c, A1, A2, alphas)
+function [PD] = u2_piece_const_mu(PD)
+nu = PD.nu;
+L1 = PD.L1;
+k = PD.k;
+w_c = PD.w_c;
+lambda_c = PD.lambda_c;
+A1 = PD.A(1:4);
+A2 = PD.A(5:end);
+alphas = PD.alphas;
 
 L2 = 1;
 mu0 = 1;
@@ -126,7 +134,7 @@ v2_11 = @(x, A) real(sum( (alphas.^2).*((A.*B).*(exp(alphas*x)))));
         end
         
         out = 0.5*(M(2,2,2,2,2,2)*u2_1*u2_1 - 2*M(2,2,1,1,2,2)*w_c*u1*u2_1 + M(2,2,1,1,1,1)*(w_c^2)*u1*u1 + ...
-                   -M(2,2,1,2,1,2)*u1_1*u1_1 - M(2,2,2,1,2,1)*(w_c^2)*u2*u2 - M(2,2,1,2,2,1)*(w_c)*u1_1*u2);
+                   -M(2,2,1,2,1,2)*u1_1*u1_1 - M(2,2,2,1,2,1)*(w_c^2)*u2*u2 - 2*M(2,2,1,2,2,1)*(w_c)*u1_1*u2);
     end
 
 % now need to enter that A matrix
@@ -217,4 +225,11 @@ rhs = [ 0    ;
     
     
 C = boundary_mat\rhs;
+PD.C = C;
+PD.phi1 = phi(1, :);
+PD.phi3 = phi(3, :);
+PD.phi_inv_T_2 = phi_inv(:, 2);
+PD.phi_inv_T_4 = phi_inv(:, 4);
+PD.r = r;
+
 end

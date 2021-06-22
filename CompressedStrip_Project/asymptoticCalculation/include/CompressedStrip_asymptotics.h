@@ -175,6 +175,7 @@ namespace compressed_strip
     double get_deltaLambda2(){return delta_lambda2;};
     double get_deltaConguateLambda2(){return delta_conguateLambda2;};
     double get_kappa(){return kappa;};
+    double get_L1(){return L1;};
 
     void check_W_derivs();
     void output_results(const unsigned int cycle) const;

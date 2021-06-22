@@ -4,8 +4,8 @@ function [PD] = do_asymptotics_exponential_and_print_file(nu, kappa, starting_wa
 PD = struct;
 
 kappa_eval = kappa;
-stepSize = 0.05;
-wavelength_vector = starting_wavelength:stepSize:60;
+stepSize = 0.001;
+wavelength_vector = starting_wavelength:stepSize:10;
 solutionVector = zeros(size(wavelength_vector));
 
 % get initial guess
@@ -22,15 +22,15 @@ end
 % close all;
 yy_sign = sign(yy);
 crossingIndex = find(diff(sign(yy_sign), 1));
-guess_x = xx(crossingIndex(end));
+guess_x = xx(crossingIndex(1));
 
 
 MAXCOUNT = 30;
 initialGuess = guess_x;
 
-ds = stepSize/100;
+ds = stepSize;
 for i = 1:length(wavelength_vector)
-    funHandle = @(x) evaluate_determinant_M(wavelength_vector(i), nu, kappa_eval, x);
+    funHandle = @(x) evaluate_determinant_M_exp(wavelength_vector(i), nu, kappa_eval, x);
 
     guess_low = initialGuess - ds;
     guess_high = initialGuess + ds;
@@ -71,16 +71,17 @@ for i = 1:length(wavelength_vector)
 end
 solutionVector = solutionVector(1:i);
 wavelength_vector = wavelength_vector(1:i);
-
-plot(wavelength_vector, solutionVector, 'LineWidth', 1.3)
-grid on
-ylabel('$\lambda_{c}$      ', 'rot', 1, 'Interpreter', 'Latex', 'Fontsize', 16)
-xlabel('Wavelength', 'fontsize', 16)
-title(['$\kappa$ = ', num2str(kappa)], 'Fontsize', 16, 'Interpreter', 'Latex')
-axis([0 35 0.2 1])
+% 
+% plot(wavelength_vector, solutionVector, 'LineWidth', 1.3)
+% grid on
+% ylabel('$\lambda_{c}$      ', 'rot', 1, 'Interpreter', 'Latex', 'Fontsize', 16)
+% xlabel('Wavelength', 'fontsize', 16)
+% title(['$\kappa$ = ', num2str(kappa)], 'Fontsize', 16, 'Interpreter', 'Latex')
+% axis([0 35 0.2 1])
 
 criticalLoad = min(solutionVector);
 criticalWavelength =  wavelength_vector(find(min(solutionVector) == solutionVector));
+criticalWavelength = criticalWavelength(1);
 criticalFreq = 2*pi/criticalWavelength;
 
 if(criticalLoad < 0 || criticalLoad > 1)
@@ -142,7 +143,7 @@ alphas = sort(alphas_roots);
 %    detVal = 1;
 %    return;
 % end
-alphas
+
 % now can solve for B's:
 B = zeros(4, 1);
 for i = 1:4
@@ -173,8 +174,12 @@ for i = 1:4
     systemMat(4, i) = w_eval*L2112*B(i)*exp(alphas(i)*L) + L1212*alphas(i)*exp(alphas(i)*L);
 end
 
-systemMat_reffed = rref(systemMat);
-A = [systemMat_reffed(1:3, 4); -1];
+% systemMat_reffed = rref(systemMat);
+% A = [systemMat_reffed(1:3, 4); -1];
+
+[eigVects, eigVals] = eig(systemMat);
+[~, mindex] = min(abs(diag(eigVals)));
+A = eigVects(:, mindex);
 if (abs(imag(A(1))) > 1e-6)
     val = imag(A(2)) - imag(A(1)) - sqrt(-1)*(real(A(1,1)) - real(A(2)));
     A = A*val;
@@ -206,63 +211,59 @@ PD = u2_exponential_mu(PD);
 
 %% print the file
 
-o = fopen(['/home/andrew/dealii/SolidsResearch/CompressedStrip_Project/asymptoticCalculation/exp_double_root_finding/', 'asymptotic_exponential_', num2str(index), '.in'],'w');
+o = fopen(['/home/andrew/Research/MinnesotaStuff/SolidsResearch/CompressedStrip_Project/asymptoticCalculation/inputFiles/exponentialInputFiles/', 'asymptotic_exponential_', num2str(index), '.in'],'w');
 fprintf(o, '#INPUT FILE FOR ASYMPTOTIC EXPONENTIAL mu\n');
 fprintf(o, 'exponential_mu\n');
 fprintf(o, '1\n');
-fprintf(o, '15 15\n');
-fprintf(o, '%f %f\n', PD.nu, PD.k);
-fprintf(o, '%f\n', PD.lambda_c);
-fprintf(o, '%f\n', PD.w_c);
+fprintf(o, '20 40\n');
+fprintf(o, '%.16e %.16e\n', PD.nu, PD.k);
+fprintf(o, '%.16e\n', PD.lambda_c);
+fprintf(o, '%.16e\n', PD.w_c);
 for i = 1:4
-   fprintf(o, '%.16f %.16f ', real(PD.alphas(i)), imag(PD.alphas(i)));  
+   fprintf(o, '%.16e %.16e ', real(PD.alphas(i)), imag(PD.alphas(i)));  
 end
 fprintf(o, '\n');
 
 for i = 1:4
-   fprintf(o, '%.16f %.16f ', real(PD.A(i)), imag(PD.A(i)));  
+   fprintf(o, '%.16e %.16e ', real(PD.A(i)), imag(PD.A(i)));  
 end
 fprintf(o, '\n');
 
 for i = 1:4
-   fprintf(o, '%.16f %.16f ', real(PD.B(i)), imag(PD.B(i)));  
+   fprintf(o, '%.16e %.16e ', real(PD.B(i)), imag(PD.B(i)));  
 end
 fprintf(o, '\n');
 
 for i = 1:4
-   fprintf(o, '%.16f %.16f ', real(PD.phi1(i)), imag(PD.phi1(i)));  
+   fprintf(o, '%.16e %.16e ', real(PD.phi1(i)), imag(PD.phi1(i)));  
 end
 fprintf(o, '\n');
 
 for i = 1:4
-   fprintf(o, '%.16f %.16f ', real(PD.phi3(i)), imag(PD.phi3(i)));  
+   fprintf(o, '%.16e %.16e ', real(PD.phi3(i)), imag(PD.phi3(i)));  
 end
 fprintf(o, '\n');
 
 for i = 1:4
-   fprintf(o, '%.16f %.16f ', real(PD.phi_inv_T_2(i)), imag(PD.phi_inv_T_2(i)));  
+   fprintf(o, '%.16e %.16e ', real(PD.phi_inv_T_2(i)), imag(PD.phi_inv_T_2(i)));  
 end
 fprintf(o, '\n');
 
 for i = 1:4
-   fprintf(o, '%.16f %.16f ', real(PD.phi_inv_T_4(i)), imag(PD.phi_inv_T_4(i)));  
+   fprintf(o, '%.16e %.16e ', real(PD.phi_inv_T_4(i)), imag(PD.phi_inv_T_4(i)));  
 end
 fprintf(o, '\n');
 
 for i = 1:4
-   fprintf(o, '%.16f %.16f ', real(PD.r(i)), imag(PD.r(i)));  
+   fprintf(o, '%.16e %.16e ', real(PD.r(i)), imag(PD.r(i)));  
 end
 fprintf(o, '\n');
 
 for i = 1:4
-   fprintf(o, '%.16f %.16f ', real(PD.C(i)), imag(PD.C(i)));  
+   fprintf(o, '%.16e %.16e ', real(PD.C(i)), imag(PD.C(i)));  
 end
 fprintf(o, '\n');
 
-for i = 1:4
-   fprintf(o, '%f %f ', real(PD.C(i)), imag(PD.C(i)));  
-end
-fprintf(o, '\n');
 
 fclose(o);
 
